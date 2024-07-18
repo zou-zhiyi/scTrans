@@ -874,11 +874,11 @@ def train_PBMC160k():
     cell_annotation = pd.read_csv('../../../datasets/cmp/PBMC160k/GSE164378_sc.meta.data_3P.csv')
     cell_types = cell_annotation['celltype.l1'].values
     train_enhance_with_d_from_pk(pk_filepath='../../../datasets/PBMC160k/PBMC160k.pk',
-                                 test_size_list=[0.9, 0.95, 0.99],
+                                 test_size_list=[0.9],
                                  print_postfix='_pretrain40epoch_finetune40epoch',
                                  adata_filepath='../../../datasets/cmp/PBMC160k/PBMC160kSample.h5ad',
                                  label=cell_types, dir_name='cmp', dataset_name='PBMC160k', word_dic_prefix='PBMC160k',
-                                 cell_type_prefix='PBMC160k', times=5)
+                                 cell_type_prefix='PBMC160k', times=1)
 
 def train_scbloodnl():
     cell_annotation_v2 = pd.read_csv('../../../datasets/scbloodnl/1M_v2_cell_types.csv', sep='\t')
@@ -891,21 +891,5 @@ def train_scbloodnl():
                                  print_postfix='_pretrain40epoch_finetune40epoch',
                                  adata_filepath='../../../datasets/cmp/scbloodnl/scbloodnlSample.h5ad',
                                  label=cell_types, dir_name='cmp', dataset_name='scbloodnl', word_dic_prefix='scbloodnl',
-                                 cell_type_prefix='scbloodnl', times=5)
-
-if __name__ == '__main__':
-    dir_name = 'mouse'
-    dataset_name_list = ['Pancreas']
-
-    test_size_list = [0.99]
-    enhance_num_list = [1]
-    head_num_list = [1]
-
-    for dataset_name in dataset_name_list:
-        for enhance_num in enhance_num_list:
-            for head_num in head_num_list:
-                train_classification_model(test_size_list=test_size_list, dir_name=dir_name, dataset_name=dataset_name,
-                                           word_dic_prefix=dataset_name, cell_type_prefix=dataset_name, times=5,
-                                           print_postfix=f'_pretrain40epoch_finetune40epoch_{enhance_num}layer_{head_num}head',
-                                           enhance_num=enhance_num, head_num=head_num)
+                                 cell_type_prefix='scbloodnl', times=1)
 

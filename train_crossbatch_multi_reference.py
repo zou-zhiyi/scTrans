@@ -84,13 +84,13 @@ if __name__ == '__main__':
     reference_data_list = ['datasets/Mouse-Pancreas-Baron/Baron.h5ad', 'datasets/Mouse-Pancreas-MCA/MCA-Pancreas.h5ad']
     query_data_list = ['datasets/Mouse-Pancreas-TMS/TMS-Pancreas.h5ad']
     query_data_name = 'TMS-Pancreas'
-    # preprocess(reference_data_list, query_data_name)
-    # pre_train(train_adata_file_list=reference_data_list, word_dic_prefix=f'{query_data_name}_reference',
-    #           cell_type_prefix=f'{query_data_name}_reference', save_model_prefix=f'{query_data_name}_reference')
-    # accuracy, f1_macro = fine_tune(train_adata_file_path_list=reference_data_list, test_file_path_list=query_data_list,
-    #           word_dic_prefix=f'{query_data_name}_reference',
-    #           cell_type_prefix=f'{query_data_name}_reference',
-    #           save_model_prefix=f'{query_data_name}_reference')
+    preprocess(reference_data_list, query_data_name)
+    pre_train(train_adata_file_list=reference_data_list, word_dic_prefix=f'{query_data_name}_reference',
+              cell_type_prefix=f'{query_data_name}_reference', save_model_prefix=f'{query_data_name}_reference')
+    accuracy, f1_macro = fine_tune(train_adata_file_path_list=reference_data_list, test_file_path_list=query_data_list,
+              word_dic_prefix=f'{query_data_name}_reference',
+              cell_type_prefix=f'{query_data_name}_reference',
+              save_model_prefix=f'{query_data_name}_reference')
 
     generate_embedding(dataset_file_path_list=query_data_list, trained_model_prefix=f'{query_data_name}_reference',
                        word_dic_prefix=f'{query_data_name}_reference',
