@@ -65,7 +65,9 @@ class Trainer():
                                                     collate_fn=pad_collate, drop_last=False))
                 # print(f'train datasets {i + 1} size: {len(self.train_dataset[i])}')
 
-        if type(self.test_dataset) is not list:
+        if self.test_dataset is None:
+            test_loader_list = []
+        elif type(self.test_dataset) is not list:
             test_loader = DataLoader(dataset=self.test_dataset, batch_size=batch_size, shuffle=True, num_workers=0,
                                      pin_memory=True, collate_fn=pad_collate, drop_last=False)
             test_loader_list.append(test_loader)

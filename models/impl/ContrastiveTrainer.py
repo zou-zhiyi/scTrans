@@ -202,18 +202,17 @@ def show_embedding(dataset_filepath, title_name, d_model, head, d_ffw, dropout_r
 
 def train_enhance_contrastive_model(train_filepath, epoch, d_model, h_dim, head, d_ffw, dropout_rate,
                                     mapping_file, vocab, pca_num, batch_size, enhance_num, with_d=True,
-                                    lr=0.001, device_name='cpu', random_seed=None, project_head_layer=None,
+                                    lr=0.001, device_name='cpu', random_seed=None, project_head_layer=None,embedding_dropout=False,
                                     save_model_path=None, trained_model_path=None, continue_train=False, freeze=False):
     set_seed(random_seed)
     word_idx_dic, _ = read_mapping_file(mapping_file[0], mapping_file[1])
     train_dataset_list, adata_list \
         = generate_dataset_list_no_celltype(filepath_list=train_filepath, word_idx_dic=word_idx_dic)
-    print(f'word_idx_idc: {word_idx_dic.word2idx_dic}')
     # print(f'cell type dic: {cell_type_idx_dic.word2idx_dic}')
     model = generate_enhance_core_model(d_model=d_model, h_dim=h_dim, head=head, d_ffw=d_ffw,
                                         dropout_rate=dropout_rate,
                                         vocab=vocab, device_name=device_name, mlp_layer=project_head_layer,
-                                        enhance_num=enhance_num)
+                                        enhance_num=enhance_num, embedding_dropout=embedding_dropout)
 
     if trained_model_path is None:
         embedding_pca_initializing(model, adata_list, pca_num, word_idx_dic, device_name, vocab)
@@ -222,6 +221,7 @@ def train_enhance_contrastive_model(train_filepath, epoch, d_model, h_dim, head,
     gc.collect()
 
     total_train_dataset = ConcatDataset(train_dataset_list)
+    print(f"train dataset size:{len(total_train_dataset)}")
 
     trainer = ContrastiveTrainer(model, [total_train_dataset], [], continue_train=continue_train,
                                  trained_model_path=trained_model_path, device_name=device_name, lr=lr)

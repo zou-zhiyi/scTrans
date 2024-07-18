@@ -81,19 +81,21 @@ class ClassificationTrainer(Trainer):
             label = label.to(self.device).unsqueeze(-1)
 
             prd = self.model(torch.ones_like(tissue_idx), tissue_val, feature_idx_pad, feature_val_pad,
-                             key_padding_mask)
+                             key_padding_mask, None)
 
             softmax_loss = cross_entropy_loss(prd, label)
 
+            self.opt.zero_grad()
+            softmax_loss.backward()
+            self.opt.step()
             prd_prop = torch.softmax(prd, dim=-1)
+
             tmp_prd = torch.flatten(torch.argmax(prd_prop, dim=-1)).cpu().numpy()
 
             y_prd_list = y_prd_list + tmp_prd.tolist()
             y_true_list = y_true_list + torch.flatten(label).cpu().numpy().tolist()
 
-            self.opt.zero_grad()
-            softmax_loss.backward()
-            self.opt.step()
+
             loss_sum.append(softmax_loss.item())
         train_loss = np.mean(loss_sum)
         context.epoch_loss = train_loss
@@ -193,12 +195,12 @@ class ClassificationTrainer(Trainer):
         context.last_f1_scores_weighted = f1_scores_weighted
 
         context.epoch_loss = np.mean(loss_sum)
+        context.cell_type_prd_list = y_prd_list
+        context.cell_type_true_list = y_true_list
 
     def generate_new_embedding(self, context: Optional[Context]):
         batch_size = context.batch_size
         pad_collate = context.pad_collate
-        title_name = context.title_name
-        visual_save_path = context.visual_save_path
         color_map = context.color_map
         data_loader = DataLoader(dataset=self.train_dataset, batch_size=batch_size, shuffle=False,
                                  collate_fn=pad_collate)
@@ -370,7 +372,7 @@ def show_embedding(dataset_filepath, title_name, d_model, head, d_ffw, dropout_r
                                                          enhance_num=enhance_num)
     if trained_model_path is not None:
         state_dict = torch.load(trained_model_path)
-        model.load_state_dict(state_dict['model'])
+        model.encode.load_state_dict(state_dict['model'])
     color_map = None
 
     train_dataset = ConcatDataset(train_dataset_list)
@@ -381,8 +383,6 @@ def show_embedding(dataset_filepath, title_name, d_model, head, d_ffw, dropout_r
                   pad_collate=PadCollate(), random_seed=None, epoch=None)
     ctx.word_idx_dic = cell_type_idx_dic
     ctx.color_map = color_map
-    ctx.visual_save_path = visual_save_path + "_total"
-    ctx.title_name = title_name
     ctx.embedding_data_name = 'Total'
     trainer.generate_new_embedding(ctx)
     color_map = ctx.color_map
@@ -408,11 +408,11 @@ def show_embedding(dataset_filepath, title_name, d_model, head, d_ffw, dropout_r
         total_true_list.append(ctx.true_list)
         total_prd_list.append(ctx.prd_list)
         total_prop_list.append(ctx.prop)
-        if ctx.embedding_data_name == title_name:
-            new_adata = sc.AnnData(X=ctx.n_embedding)
-            new_adata.obs['cell_type_prd'] = ctx.prd_list
-            new_adata.obs['cell_type_true'] = ctx.true_list
-            new_adata.write_h5ad(f'interpretable/embedding/{ctx.embedding_data_name}{anndata_postfix}.h5ad')
+        # if ctx.embedding_data_name == title_name:
+        new_adata = sc.AnnData(X=ctx.n_embedding)
+        new_adata.obs['cell_type_prd'] = ctx.prd_list
+        new_adata.obs['cell_type_true'] = ctx.true_list
+        new_adata.write_h5ad(f'interpretable/embedding/{ctx.embedding_data_name}{anndata_postfix}.h5ad')
             # color_map = tsne_plot(data=ctx.n_embedding, label_name=ctx.prd_list, color_map=color_map,
             #                       save_file_name=f"interpretable/embedding/hvg2000/{visual_save_path}-{ctx.embedding_data_name}{anndata_postfix}-cell_type_prd.jpg")
             # color_map = tsne_plot(data=ctx.n_embedding, label_name=ctx.true_list, color_map=color_map,
@@ -455,41 +455,6 @@ def show_attention_weights(dataset_filepath, d_model, h_dim, head, d_ffw, dropou
     ctx.k = k
     trainer.show_attention_weights(ctx)
 
-
-def show_attention_weights_prd(dataset_filepath, d_model, h_dim, head, d_ffw, dropout_rate, mapping_file, enhance_num,
-                               mlp_layer,
-                               vocab, batch_size, lr=0.001, device_name='cpu', random_seed=None,
-                               project_head_layer=None,
-                               save_model_path=None, trained_model_path=None, continue_train=False,
-                               dataset_name='empty',
-                               k=1000):
-    set_seed(random_seed)
-    word_idx_dic, cell_type_idx_dic = read_mapping_file(mapping_file[0], mapping_file[1])
-    print(f'cell type dic: {cell_type_idx_dic.word2idx_dic}')
-    predict_type = len(cell_type_idx_dic.word2idx_dic)
-    train_dataset_list, adata_list \
-        = generate_dataset_list(filepath_list=dataset_filepath, word_idx_dic=word_idx_dic,
-                                cell_type_idx_dic=cell_type_idx_dic)
-
-    batch_set = [1]
-    model = generate_enhance_classification_model_with_d(d_model=d_model, h_dim=h_dim, head=head, d_ffw=d_ffw,
-                                                         dropout_rate=dropout_rate,
-                                                         predict_type=predict_type, vocab=vocab,
-                                                         device_name=device_name, mlp_layer=mlp_layer,
-                                                         enhance_num=enhance_num)
-    if trained_model_path is not None:
-        state_dict = torch.load(trained_model_path)
-        model.load_state_dict(state_dict['model'])
-    trainer = ClassificationTrainer(model, train_dataset_list[0], [], continue_train=continue_train,
-                                    trained_model_path=None, device_name=device_name, lr=lr)
-
-    ctx = Context(batch_size=batch_size, save_model_path=save_model_path,
-                  pad_collate=PadCollate(), random_seed=None, epoch=None)
-    ctx.gene_num = len(word_idx_dic.word2idx_dic)
-    ctx.word_idx_dic = word_idx_dic
-    ctx.dataset_name = dataset_name
-    ctx.k = k
-    trainer.show_attention_weights_prd(ctx)
 
 def train_enhance_class_model_with_d(train_filepath, test_size, epoch, d_model, head, d_ffw, dropout_rate,
                                      mapping_file,
@@ -568,7 +533,7 @@ def train_enhance_class_model_with_extra(train_filepath, test_filepath, batch_si
                                          mapping_file, epoch, d_model, h_dim, head, d_ffw, dropout_rate,
                                          vocab, continue_train, save_model_path, pca_num, freeze,
                                          lr=0.001, device_name='cpu', random_seed=None, mlp_layer=None,
-                                         enhance_num=1, trained_model_path=None):
+                                         enhance_num=1, trained_model_path=None, embedding_dropout=False):
     set_seed(random_seed)
     word_idx_dic, cell_type_idx_dic = read_mapping_file(mapping_file[0], mapping_file[1])
     print(cell_type_idx_dic.word2idx_dic)
@@ -584,7 +549,7 @@ def train_enhance_class_model_with_extra(train_filepath, test_filepath, batch_si
                                                          dropout_rate=dropout_rate,
                                                          predict_type=predict_type, vocab=vocab,
                                                          device_name=device_name, mlp_layer=mlp_layer,
-                                                         enhance_num=enhance_num)
+                                                         enhance_num=enhance_num, embedding_dropout=embedding_dropout)
 
     if trained_model_path is None:
         enhance_classification_construct(model, train_adata_list, pca_num, word_idx_dic, device_name, vocab)
@@ -599,15 +564,12 @@ def train_enhance_class_model_with_extra(train_filepath, test_filepath, batch_si
     total_test_dataset = ConcatDataset(test_dataset_list)
     gc.collect()
 
-    trainer = ClassificationTrainer(model, total_train_dataset, total_test_dataset, continue_train=continue_train,
+    trainer = ClassificationTrainer(model, total_train_dataset, test_dataset=None, continue_train=continue_train,
                                     trained_model_path=None, device_name=device_name, lr=lr)
     ctx = Context(epoch=epoch, batch_size=batch_size, save_model_path=save_model_path,
                   pad_collate=PadCollate(), random_seed=None)
-    ctx.predict_type = predict_type
 
-    total_acc_list, total_ari_list, total_f1_scores_median_list, total_f1_scores_macro_list, total_f1_scores_micro_list, \
-        total_f1_scores_weighted_list = [], [], [], [], [], []
-    total_auc_list = []
+    ctx.predict_type = predict_type
 
     ctx.acc_list, ctx.ari_list, ctx.f1_scores_median_list, ctx.f1_scores_macro_list, ctx.f1_scores_micro_list, \
         ctx.f1_scores_weighted_list = [], [], [], [], [], []
@@ -618,39 +580,11 @@ def train_enhance_class_model_with_extra(train_filepath, test_filepath, batch_si
         ctx.last_f1_scores_weighted = 0, 0, 0, 0, 0, 0
     trainer.train(ctx)
 
-    print(f'ctx acc list: {ctx.acc_list}')
-    print(f'ctx auc list: {ctx.auc_list}')
-    print(f'ctx ari list: {ctx.ari_list}')
-    print(f'ctx f1_scores_median list: {ctx.f1_scores_median_list}')
-    print(f'ctx f1_scores_macro list: {ctx.f1_scores_macro_list}')
-    print(f'ctx f1_scores_micro list: {ctx.f1_scores_micro_list}')
-    print(f'ctx f1_scores_weighted list: {ctx.f1_scores_weighted_list}')
-
-    print(f'ctx best acc: {ctx.best_acc}')
-    print(f'ctx best auc: {ctx.best_auc}')
-    print(f'ctx best ari: {ctx.best_ari}')
-    print(f'ctx best f1_scores_median: {ctx.best_f1_scores_median}')
-    print(f'ctx best f1_scores_macro: {ctx.best_f1_scores_macro}')
-    print(f'ctx best f1_scores_micro: {ctx.best_f1_scores_micro}')
-    print(f'ctx best f1_scores_weighted: {ctx.best_f1_scores_weighted}')
-
-    print(f'ctx last acc: {ctx.last_acc}')
-    print(f'ctx last auc: {ctx.last_auc}')
-    print(f'ctx last ari: {ctx.last_ari}')
-    print(f'ctx last f1_scores_median: {ctx.last_f1_scores_median}')
-    print(f'ctx last f1_scores_macro: {ctx.last_f1_scores_macro}')
-    print(f'ctx last f1_scores_micro: {ctx.last_f1_scores_micro}')
-    print(f'ctx last f1_scores_weighted: {ctx.last_f1_scores_weighted}')
-
-    total_acc_list.append(ctx.acc_list)
-    total_ari_list.append(ctx.ari_list)
-    total_auc_list.append(ctx.auc_list)
-    total_f1_scores_median_list.append(ctx.f1_scores_median_list)
-    total_f1_scores_macro_list.append(ctx.f1_scores_macro_list)
-    total_f1_scores_micro_list.append(ctx.f1_scores_micro_list)
-    total_f1_scores_weighted_list.append(ctx.f1_scores_weighted_list)
-
-    for i in range(len(test_dataset_list)):
+    trainer.model.eval()
+    with torch.no_grad():
+        ctx =  Context(epoch=epoch, batch_size=batch_size, save_model_path=save_model_path,
+                  pad_collate=PadCollate(), random_seed=None)
+        ctx.predict_type = predict_type
         ctx.acc_list, ctx.ari_list, ctx.f1_scores_median_list, ctx.f1_scores_macro_list, ctx.f1_scores_micro_list, \
             ctx.f1_scores_weighted_list = [], [], [], [], [], []
         ctx.auc_list, ctx.best_auc, ctx.last_auc = [], 0, 0
@@ -658,49 +592,10 @@ def train_enhance_class_model_with_extra(train_filepath, test_filepath, batch_si
             ctx.best_f1_scores_weighted = 0, 0, 0, 0, 0, 0
         ctx.last_acc, ctx.last_ari, ctx.last_f1_scores_median, ctx.last_f1_scores_macro, ctx.last_f1_scores_micro, \
             ctx.last_f1_scores_weighted = 0, 0, 0, 0, 0, 0
-        test_loader = DataLoader(dataset=test_dataset_list[i], batch_size=batch_size, shuffle=True,
+        test_loader = DataLoader(dataset=total_test_dataset, batch_size=batch_size, shuffle=True,
                                  pin_memory=False, collate_fn=ctx.pad_collate, drop_last=False)
         trainer.test_inner(test_loader, ctx)
 
-        print(f'ctx acc list: {ctx.acc_list}')
-        print(f'ctx auc list: {ctx.auc_list}')
-        print(f'ctx ari list: {ctx.ari_list}')
-        print(f'ctx f1_scores_median list: {ctx.f1_scores_median_list}')
-        print(f'ctx f1_scores_macro list: {ctx.f1_scores_macro_list}')
-        print(f'ctx f1_scores_micro list: {ctx.f1_scores_micro_list}')
-        print(f'ctx f1_scores_weighted list: {ctx.f1_scores_weighted_list}')
-
-        print(f'ctx best acc: {ctx.best_acc}')
-        print(f'ctx best auc: {ctx.best_auc}')
-        print(f'ctx best ari: {ctx.best_ari}')
-        print(f'ctx best f1_scores_median: {ctx.best_f1_scores_median}')
-        print(f'ctx best f1_scores_macro: {ctx.best_f1_scores_macro}')
-        print(f'ctx best f1_scores_micro: {ctx.best_f1_scores_micro}')
-        print(f'ctx best f1_scores_weighted: {ctx.best_f1_scores_weighted}')
-
-        print(f'ctx last acc: {ctx.last_acc}')
-        print(f'ctx last auc: {ctx.last_auc}')
-        print(f'ctx last ari: {ctx.last_ari}')
-        print(f'ctx last f1_scores_median: {ctx.last_f1_scores_median}')
-        print(f'ctx last f1_scores_macro: {ctx.last_f1_scores_macro}')
-        print(f'ctx last f1_scores_micro: {ctx.last_f1_scores_micro}')
-        print(f'ctx last f1_scores_weighted: {ctx.last_f1_scores_weighted}')
-
-        total_acc_list.append(ctx.acc_list.copy())
-        total_ari_list.append(ctx.ari_list.copy())
-        total_auc_list.append(ctx.auc_list.copy())
-        total_f1_scores_median_list.append(ctx.f1_scores_median_list.copy())
-        total_f1_scores_macro_list.append(ctx.f1_scores_macro_list.copy())
-        total_f1_scores_micro_list.append(ctx.f1_scores_micro_list.copy())
-        total_f1_scores_weighted_list.append(ctx.f1_scores_weighted_list.copy())
-
-    ctx.acc_list = total_acc_list
-    ctx.ari_list = total_ari_list
-    ctx.auc_list = total_auc_list
-    ctx.f1_scores_median_list = total_f1_scores_median_list
-    ctx.f1_scores_macro_list = total_f1_scores_macro_list
-    ctx.f1_scores_micro_list = total_f1_scores_micro_list
-    ctx.f1_scores_weighted_list = total_f1_scores_weighted_list
     return ctx
 
 def train_enhance_extra_with_d(word_dic_prefix, cell_type_prefix, train_file_path_list, test_file_path_list,
@@ -1034,64 +929,6 @@ def train_enhance_extra_task2_with_d(word_dic_prefix, cell_type_prefix, train_fi
     print_log.close()
     gc.collect()
 
-def show_enhance_embedding(dataset_name='Mouse-Pancreas-*', check_dataset_name='MCA-Pancreas', anndata_postfix='', i=0):
-    # dataset_name = 'Mouse-Pancreas-*'
-    visual_save_path_name = check_dataset_name + "_Extra_Task2" + "_TEST2"
-    word_dic_prefix = check_dataset_name + "_Extra_Task2"
-    cell_type_prefix = check_dataset_name + "_Extra_Task2"
-
-    # visual_save_path_name = 'Baron'
-    # visual_save_path_name = 'MCA-Pancreas'+ "_TEST"
-    # visual_save_path_name = check_dataset_name
-    # word_dic_prefix = 'MCA-Pancreas'
-    # cell_type_prefix = 'MCA-Pancreas'
-
-    # visual_save_path_name = 'PBMC45k-CEL-Seq2' + "_TEST"
-    # word_dic_prefix = 'PBMC45k-CEL-Seq2'
-    # cell_type_prefix = 'PBMC45k-CEL-Seq2'
-
-    dir_name = 'cmp'
-    adata_postfix = '.h5ad'
-    data_files = glob.glob(f'../../../datasets/{dir_name}/{dataset_name}/*{adata_postfix}')
-
-    print(list(data_files))
-    f = list(data_files)
-    # return
-    # model_dataset_name = 'Romanov' + '_interpretable_'
-    title_name = check_dataset_name
-    model_dataset_name = check_dataset_name + "_Extra_Task2" +"_HVG2000"
-    # model_dataset_name = check_dataset_name + "_Extra_Task2" + '_interpretable_'
-    # show_embedding(
-    #     # trained_model_path=f'pretrained/{model_dataset_name}_tissue_enhance1_1head_pretrained_class_model_300_percent_pe_mean_with_tissue_without_D.pth',
-    #     trained_model_path=f'pretrained/{model_dataset_name}_{i}_tissue_enhance1_1head_pretrained_class_model_300_percent_pe_mean_with_tissue_without_D.pth',
-    #     dataset_filepath=f, d_model=64, head=1, d_ffw=192, dropout_rate=0.2, enhance_num=1,
-    #     mlp_layer=[],
-    #     title_name=title_name,
-    #     anndata_postfix=anndata_postfix+str(i),
-    #     device_name="cuda:0",
-    #     visual_save_path=visual_save_path_name,
-    #     mapping_file=[f'../../../datasets/preprocessed/{dir_name}/{word_dic_prefix}_word_dic.pk',
-    #                   f'../../../datasets/preprocessed/{dir_name}/{cell_type_prefix}_cell_type_dic.pk'],
-    #     vocab=40000, batch_size=100)
-    total_adata = None
-    for ref_path in f:
-        current_dataset_name, _ = os.path.splitext(os.path.basename(ref_path))
-        if current_dataset_name == check_dataset_name:
-            continue
-        adata = check_anndata(ref_path)
-        adata.var_names = [x.lower() for x in adata.var_names]
-        adata.var_names_make_unique()
-        print(adata.var_names)
-        if total_adata is None:
-            total_adata = adata
-        else:
-            total_adata = total_adata.concatenate(adata, join='outer', fill_value=0, uns_merge="first")
-        del adata
-        gc.collect()
-    sc.pp.highly_variable_genes(total_adata, n_top_genes=2000, inplace=True, subset=True)
-    hvg_names = total_adata.var_names.tolist()
-
-
 
 def show_enhance_attention_weights(dataset_name='Mouse-Pancreas-MCA', check_dataset_name='MCA-Pancreas', k=10):
     # dataset_name = 'Mouse-Brain-Romanov'
@@ -1187,13 +1024,13 @@ def train_extra_task2():
     #                                      print_prefix=test_data + "_Extra_Task2",
     #                                      test_data_name=test_data)
 
-    total_data = glob.glob('../../datasets/Mouse-Brain-*/*.h5ad')
+    total_data = glob.glob('../../datasets/Mouse-Pancreas-*/*.h5ad')
     for j in range(len(total_data)):
         # if j <= 1:
         #     continue
         test_data, _ = os.path.splitext(os.path.basename(total_data[j]))
-        # if test_data != 'TMS-Pancreas':
-        #     continue
+        if test_data != 'TMS-Pancreas':
+            continue
         test_file_path = total_data[j]
         tmp_ref_data = []
         for i in range(len(total_data)):
@@ -1206,7 +1043,7 @@ def train_extra_task2():
                                          cell_type_prefix=test_data + "_Extra_Task2",
                                          train_file_path_list=tmp_ref_data, test_file_path_list=[test_file_path],
                                          enhance_num=1,
-                                         save_model_prefix=test_data+"_Extra_Task2" + "_total", times=5,
+                                         save_model_prefix=test_data+"_Extra_Task2" + "_total", times=1,
                                          # save_model_prefix=test_data + "_Extra_Task2" + '_big', times=1,
                                          print_postfix='_pretrain40epoch_finetune40epoch_1layer_1head_val_dot_embedding_nomaskenhance_embeddingdropout',
                                          print_prefix=test_data + "_Extra_Task2_",

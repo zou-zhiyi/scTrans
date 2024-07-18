@@ -427,13 +427,13 @@ def calculate_score(true_label, pred_label):
     acc = accuracy_score(true_label, pred_label)
     # acc = precision_score(true_label,pred_label,average='macro')
     f1_scores_median = f1_score(true_label, pred_label, average=None)
-    print(f'f1 list: {f1_scores_median}')
+    # print(f'f1 list: {f1_scores_median}')
     f1_scores_median = np.median(f1_scores_median)
     f1_scores_macro = f1_score(true_label, pred_label, average='macro')
     f1_scores_micro = f1_score(true_label, pred_label, average='micro')
     f1_scores_weighted = f1_score(true_label, pred_label, average='weighted')
-    print('acc:', acc, 'ari:', ari, 'f1_scores_median:', f1_scores_median, 'f1_scores_macro:',
-          f1_scores_macro, 'f1_scores_micro:', f1_scores_micro, 'f1_scores_weighted:', f1_scores_weighted)
+    # print('acc:', acc, 'ari:', ari, 'f1_scores_median:', f1_scores_median, 'f1_scores_macro:',
+    #       f1_scores_macro, 'f1_scores_micro:', f1_scores_micro, 'f1_scores_weighted:', f1_scores_weighted)
     return acc, ari, f1_scores_median, f1_scores_macro, f1_scores_micro, f1_scores_weighted
 
 

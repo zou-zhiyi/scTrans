@@ -171,24 +171,24 @@ class ContrastiveLoss(nn.Module):
 
 
 def generate_enhance_core_model(d_model, h_dim, head, d_ffw, dropout_rate, vocab, enhance_num,
-                                device_name="cpu", mlp_layer=None):
+                                device_name="cpu", mlp_layer=None, embedding_dropout=False):
     device = torch.device(device_name)
     model_core = Encoder(d_model=d_model, h_dim=h_dim, head=head, d_ffw=d_ffw,
                          dropout_rate=dropout_rate,
-                         vocab=vocab,
+                         vocab=vocab, embedding_dropout=embedding_dropout,
                          enhance_num=enhance_num)
     model_core.to(device)
     return model_core
 
 def generate_enhance_classification_model_with_d(d_model, h_dim, head, d_ffw, dropout_rate, predict_type, vocab,
                                                  enhance_num,
-                                                 freeze=False,
+                                                 freeze=False, embedding_dropout=False,
                                                  device_name="cpu", mlp_layer=None):
     device = torch.device(device_name)
     model_core = Encoder(d_model=d_model, h_dim=h_dim, head=head, d_ffw=d_ffw,
                          dropout_rate=dropout_rate,
                          vocab=vocab,
-                         enhance_num=enhance_num)
+                         enhance_num=enhance_num, embedding_dropout=embedding_dropout)
     model_core.to(device)
     model = ClassificationModel(model=model_core, d_model=d_model, predict_type=predict_type, dropout_rate=dropout_rate,
                                 mlp_layer=mlp_layer)

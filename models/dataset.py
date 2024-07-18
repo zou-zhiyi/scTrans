@@ -8,6 +8,7 @@ import scanpy as sc
 import heapq
 from models.utils import WordIdxDic, check_anndata, merger_gene_dic, stratify_split, read_file_from_pickle
 
+
 class SparsePredictDatasetPreprocessedV2(Dataset):
     def __init__(self, data, label, word_idx_dic: WordIdxDic, cell_type_idx_dic: WordIdxDic, gene_name_list,
                  tissue=None):
@@ -65,6 +66,58 @@ class SparsePredictDatasetPreprocessedV2(Dataset):
     def __len__(self):
         return self.len
 
+
+class SparsePredictDatasetPreprocessed_no_celltype(Dataset):
+    def __init__(self, data, word_idx_dic: WordIdxDic, gene_name_list,
+                 tissue=None):
+        """
+        将细胞类型映射单独拿出来,预测细胞类型使用另一个dic
+        :param data:
+        :param label:
+        :param word_idx_dic:
+        :param cell_type_idx_dic:
+        :param gene_name_list:
+        :param tissue:
+        """
+        # self.data = data
+        self.gene_idx_dic = word_idx_dic
+        self.gene_name_list = gene_name_list
+        self.tissue = tissue
+        self.len = data.shape[0]
+        self.data_list = []
+        for index in range(self.len):
+            data_val = (data[index][:] != 0)
+            g_name_list = self.gene_name_list[data_val]
+            g_idx_list = np.array(list(
+                map(lambda x: self.gene_idx_dic.getIdx(x.lower()) if self.gene_idx_dic.getIdx(x.lower()) else -1,
+                    g_name_list)))
+
+            g_idx_mask = (g_idx_list != -1)
+            tissue_idx = None
+            data_val = data[index][data_val]
+            data_val = data_val[g_idx_mask]
+            g_idx_list = g_idx_list[g_idx_mask]
+
+            # mean scaling
+            # print(data_val)
+            data_val = data_val / data_val.mean()
+            # print(data_val)
+            # print('=====')
+            if tissue_idx is None:
+                # print("tissue is None")
+                tissue_idx = 1
+            self.data_list.append((tissue_idx, g_idx_list, data_val))
+
+    def __getitem__(self, index):
+        tissue_idx, g_idx_list, data_val = self.data_list[index]
+        tissue_idx = torch.tensor(tissue_idx)
+        return tissue_idx, torch.ones_like(tissue_idx), torch.tensor(g_idx_list, dtype=torch.long) \
+            , torch.tensor(data_val, dtype=torch.float32)
+
+    def __len__(self):
+        return self.len
+
+
 class SparsePredictDatasetPreprocessedV3_from_pk(Dataset):
     def __init__(self, pk_file_path):
         self.data_list = read_file_from_pickle(pk_file_path)
@@ -112,6 +165,7 @@ class PadCollate():
             feature_idx_lens), \
             feature_val_lens_tensor, label_tensor
 
+
 class PadCollate_no_celltype():
     def __init__(self):
         return
@@ -129,6 +183,7 @@ class PadCollate_no_celltype():
         return torch.tensor(tissue_idx), torch.tensor(tissue_val), feature_idx_pad, feature_val_pad, torch.tensor(
             feature_idx_lens), \
             feature_val_lens_tensor
+
 
 class PadCollate2():
     def __init__(self):
@@ -153,6 +208,8 @@ class PadCollate2():
         return torch.tensor(tissue_idx), torch.tensor(tissue_val), feature_idx_pad, feature_val_pad, torch.tensor(
             feature_idx_lens), \
             feature_val_lens_tensor, label_tensor, batch_id_tensor, raw_data_tensor
+
+
 class DenseData():
     def __init__(self, gene_idx_list, gene_val_list, rule_idx_list, rule_gene_idx_list):
         self.gene_idx_list = gene_idx_list
@@ -228,12 +285,13 @@ def generate_dataset_list(filepath_list, word_idx_dic, cell_type_idx_dic):
         adata_list.append(adata)
     return test_dataset_list, adata_list
 
+
 def generate_dataset_list_no_celltype(filepath_list, word_idx_dic):
     test_dataset_list, adata_list = [], []
     for filepath in filepath_list:
         adata = check_anndata(filepath)
         test_dataset = SparsePredictDatasetPreprocessed_no_celltype(adata.X, word_idx_dic,
-                                                          adata.var_names)
+                                                                    adata.var_names)
         # test_dataset = SparsePredictDatasetPreprocessedV2(adata.X, adata.obs['cell_type'], word_idx_dic,
         #                                                   cell_type_idx_dic,
         #                                                   adata.var_names,

@@ -146,6 +146,8 @@ class ClassificationTrainer(Trainer):
         context.last_f1_scores_micro = f1_scores_micro
         context.best_f1_scores_weighted = max(context.best_f1_scores_weighted, f1_scores_weighted)
         context.last_f1_scores_weighted = f1_scores_weighted
+        context.cell_type_prd_list = y_prd_list
+        context.cell_type_true_list = y_true_list
 
         context.epoch_loss = np.mean(loss_sum)
 
@@ -347,32 +349,21 @@ def show_attention_weights(dataset_filepath, d_model, head, d_ffw, dropout_rate,
 
 
 
-def train_enhance_class_model_with_d(train_filepath, test_size, epoch, d_model, head, d_ffw, dropout_rate,
-                                     mapping_file,
-                                     vocab, pca_num, batch_size, lr=0.001, device_name='cpu', random_seed=None,
-                                     mlp_layer=None,
-                                     save_model_path=None, trained_model_path=None, continue_train=False, freeze=False,
-                                    enhance_num=1):
+def train_enhance_class_model(train_filepath, test_size, epoch, d_model, head, d_ffw, dropout_rate,
+                              mapping_file,
+                              vocab, pca_num, batch_size, lr=0.001, device_name='cpu', random_seed=None,
+                              mlp_layer=None,
+                              save_model_path=None, trained_model_path=None, continue_train=False, freeze=False,
+                              enhance_num=1):
     set_seed(random_seed)
     word_idx_dic, cell_type_idx_dic = read_mapping_file(mapping_file[0], mapping_file[1])
     train_dataset_list, test_dataset_list, adata_list \
         = generate_train_test_dataset_list(filepath_list=train_filepath, test_size=test_size,
                                            word_idx_dic=word_idx_dic, cell_type_idx_dic=cell_type_idx_dic,
                                            random_seed=random_seed)
-    print(f'word_idx_idc: {word_idx_dic.word2idx_dic}')
+    # print(f'word_idx_idc: {word_idx_dic.word2idx_dic}')
     # predict_type = adata.uns['cell_type_nums']
-    print(f'cell type dic: {cell_type_idx_dic.word2idx_dic}')
-    batch_set = [1]
-    for adata in adata_list:
-        batch_set = set(adata.obs['batch_id'])
-        counter = Counter(adata.obs['cell_type'])
-        print(len(set(adata.obs['cell_type'])))
-        print(f"true set: {set(adata.obs['cell_type'])}")
-        print(f'Counter: {counter}')
-    print(f'batch set num: {len(batch_set)}')
-    print(f'batch set: {batch_set}')
-
-    batch_set = [1]
+    # print(f'cell type dic: {cell_type_idx_dic.word2idx_dic}')
     model = generate_enhance_classification_model_with_d(d_model=d_model,h_dim=d_model, head=head, d_ffw=d_ffw,
                                                          dropout_rate=dropout_rate,
                                                          predict_type=len(cell_type_idx_dic.word2idx_dic), vocab=vocab,
@@ -390,11 +381,15 @@ def train_enhance_class_model_with_d(train_filepath, test_size, epoch, d_model, 
     total_train_dataset = ConcatDataset(train_dataset_list)
     total_test_dataset = ConcatDataset(test_dataset_list)
 
-    trainer = ClassificationTrainer(model, total_train_dataset, total_test_dataset, continue_train=continue_train,
+    trainer = ClassificationTrainer(model, total_train_dataset, test_dataset=None, continue_train=continue_train,
                                     trained_model_path=None, device_name=device_name, lr=lr)
 
     ctx = Context(epoch=epoch, batch_size=batch_size, save_model_path=save_model_path,
                   pad_collate=PadCollate(), random_seed=None)
+
+    trainer.train(ctx)
+
+    ctx = Context(pad_collate=PadCollate(), batch_size=batch_size)
     ctx.acc_list, ctx.ari_list, ctx.f1_scores_median_list, ctx.f1_scores_macro_list, ctx.f1_scores_micro_list, \
         ctx.f1_scores_weighted_list = [], [], [], [], [], []
     ctx.auc_list, ctx.best_auc, ctx.last_auc = [], 0, 0
@@ -402,7 +397,12 @@ def train_enhance_class_model_with_d(train_filepath, test_size, epoch, d_model, 
         ctx.best_f1_scores_weighted = 0, 0, 0, 0, 0, 0
     ctx.last_acc, ctx.last_ari, ctx.last_f1_scores_median, ctx.last_f1_scores_macro, ctx.last_f1_scores_micro, \
         ctx.last_f1_scores_weighted = 0, 0, 0, 0, 0, 0
-    trainer.train(ctx)
+
+    trainer.model.eval()
+    with torch.no_grad():
+        test_loader = DataLoader(dataset=total_test_dataset, batch_size=batch_size, shuffle=False,
+                                                   collate_fn=PadCollate(), drop_last=False)
+        trainer.test_inner(test_loader, ctx)
 
     print(f'ctx acc list: {ctx.acc_list}')
     print(f'ctx auc list: {ctx.auc_list}')
@@ -558,20 +558,20 @@ def train_classification_model(test_size_list=None, dir_name='mouse', dataset_na
         for j in range(len(test_size_list)):
             start = time.time()
             torch.cuda.synchronize()
-            ctx = train_enhance_class_model_with_d(train_filepath=f,
-                                                   test_size=test_size_list[j], epoch=40,
-                                                   freeze=True,
-                                                   mlp_layer=[],
-                                                   lr=0.001, enhance_num=enhance_num,
-                                                   mapping_file=[
+            ctx = train_enhance_class_model(train_filepath=f,
+                                            test_size=test_size_list[j], epoch=40,
+                                            freeze=True,
+                                            mlp_layer=[],
+                                            lr=0.001, enhance_num=enhance_num,
+                                            mapping_file=[
                                                        f'../../datasets/preprocessed/{dir_name}/{word_dic_prefix}_word_dic.pk',
                                                        f'../../datasets/preprocessed/{dir_name}/{cell_type_prefix}_cell_type_dic.pk'],
-                                                   save_model_path=f'pretrained/{dataset_name}_enhance{enhance_num}_{head_num}head_pretrained_class_model.pth',
-                                                   trained_model_path=f'pretrained/{dataset_name}_enhance{enhance_num}_{head_num}head_pretrained_cts_model.pth',
-                                                   d_model=64, head=head_num, d_ffw=64*3, dropout_rate=0.2, vocab=40000,
-                                                   pca_num=64,
-                                                   batch_size=100,
-                                                   device_name='cuda:0', random_seed=i, continue_train=False)
+                                            save_model_path=f'pretrained/{dataset_name}_enhance{enhance_num}_{head_num}head_pretrained_class_model.pth',
+                                            trained_model_path=f'pretrained/{dataset_name}_enhance{enhance_num}_{head_num}head_pretrained_cts_model.pth',
+                                            d_model=64, head=head_num, d_ffw=64*3, dropout_rate=0.2, vocab=40000,
+                                            pca_num=64,
+                                            batch_size=100,
+                                            device_name='cuda:0', random_seed=i, continue_train=False)
             torch.cuda.synchronize()
             end = time.time()
             fine_tune_run_time_list[j].append(end - start)
