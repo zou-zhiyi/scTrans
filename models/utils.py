@@ -70,8 +70,9 @@ def merger_gene_dic(adata: sc.AnnData, gene_idx_dic=None) -> WordIdxDic:
         gene_idx_dic = WordIdxDic()
     for gene in adata.var_names:
         gene_idx_dic.insert(gene.lower())
-    for cell_type in set(adata.obs['cell_type']):
-        gene_idx_dic.insert(str(cell_type).lower())
+    if 'cell_type' in adata.obs.keys():
+        for cell_type in set(adata.obs['cell_type']):
+            gene_idx_dic.insert(str(cell_type).lower())
     if adata.uns.get('tissues', None) is not None:
         for tissue in adata.uns['tissues']:
             gene_idx_dic.insert(tissue.lower())
@@ -194,6 +195,7 @@ def merge_multi_files(fileprefx, save_filename, tissue_name=None):
 
 def loss_visual(loss_total, test_loss_total, idx=''):
     plt.cla()
+    plt.clf()
     y = loss_total
     print(loss_total)
     if not os.path.exists('loss'):
@@ -268,8 +270,8 @@ def tsne_plot(data, label_name, save_file_name, color_map=None, title_name=''):
     # adata.obs['cell_type_idx'][adata.obs['cell_type_idx'] == nan_error_value] = 0
     # target = adata.obs['cell_type_idx']
     # plt.subplots(300)
-    print(embedding)
-    print(embedding.shape)
+    # print(embedding)
+    # print(embedding.shape)
     if not isinstance(label_name, list):
         label_name = label_name.tolist()
     label_name = np.array(label_name)
@@ -288,7 +290,7 @@ def scatter_plot(label_set, label_name, color_map, embedding, title_name, save_f
     cnt = 0
     for l in label_set:
         tmp = (label_name == l)
-        print(tmp)
+        # print(tmp)
         # print(tmp.shape)
         # print(tmp.sum())
         if l in color_map.keys():
@@ -299,7 +301,7 @@ def scatter_plot(label_set, label_name, color_map, embedding, title_name, save_f
         plt.scatter(embedding[tmp, 0], embedding[tmp, 1], marker=marker, c=color, s=5, label=l)
 
         cnt += 1
-        print(cnt)
+        # print(cnt)
     plt.title(title_name, fontsize=80)
     plt.legend(loc="upper right", bbox_to_anchor=(1.25, 1))
     # legend = ax.legend(*scatter.legend_elements(),loc="lower left", title="Classes")
@@ -333,30 +335,24 @@ def leiden_clustering(embedding, n_clusters=10):
     # return esimator.labels_
 
 
-def tsne_plot_heat(data, label_list, label_name, save_file_name,  title_name=''):
-    plt.figure(dpi=300)
+def tsne_plot_heat(data, label_list, label_name, save_file_name,  title_name='', cmap='viridis', figsize=(8 / 2.54, 8 / 2.54)):
+    my_dpi = 300
+    plt.figure(figsize=figsize, dpi=my_dpi)
+    plt.rcParams['font.family'] = 'Arial'
+    plt.rcParams.update({"font.size": 6})
+    # plt.figure(dpi=300)
     reducer = manifold.TSNE(n_components=2, init='pca', random_state=1)
     embedding = reducer.fit_transform(data)
-    # nan_error_value = adata.obs['cell_type_idx'].min()
-    # max_type_value = adata.obs['cell_type_idx'].max()
-    # adata.obs['cell_type_idx'][adata.obs['cell_type_idx'] == nan_error_value] = 0
-    # target = adata.obs['cell_type_idx']
-    # plt.subplots(300)
-    print(embedding)
-    print(embedding.shape)
-    label_list = np.array(label_list).squeeze(-1)
-    print(label_list.shape)
-    idx = np.argsort(label_list)
-    print(idx)
-    # label_set = set(label_list)
-    # print(label_set)
-    plt.scatter(embedding[idx, 0], embedding[idx, 1], marker='o', c=label_list[idx], s=5, cmap='viridis', label=label_name)
-    plt.colorbar()
-    # plt.legend(loc="upper right", title="Classes")
 
-    # legend = ax.legend(*scatter.legend_elements(),loc="lower left", title="Classes")
-    # ax.add_artist(legend)
-    plt.title(title_name)
+    plt.xticks([])
+    plt.yticks([])
+    plt.scatter(embedding[:, 0], embedding[:, 1], marker='o', c=label_list, s=0.25, cmap=cmap, label=label_name,
+                rasterized=True)
+    # plt.scatter(embedding[:, 0], embedding[:, 1], marker='o', c=label_list, s=0.25, cmap='OrRd', label=label_name)
+
+    plt.colorbar()
+
+    plt.title(title_name, fontsize=6)
     plt.savefig(save_file_name)
     plt.show()
     plt.close()
@@ -453,6 +449,7 @@ def set_seed(seed=None):
         torch.cuda.manual_seed_all(seed)  # 多卡模式下，让所有显卡生成的随机数一致？这个待验证
         np.random.seed(seed)  # numpy产生的随机数一致
         random.seed(seed)
+        torch.backends.cudnn.deterministic = True
 
     # CUDA中的一些运算，如对sparse的CUDA张量与dense的CUDA张量调用torch.bmm()，它通常使用不确定性算法。
     # 为了避免这种情况，就要将这个flag设置为True，让它使用确定的实现。

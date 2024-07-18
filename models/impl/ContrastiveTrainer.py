@@ -1,7 +1,8 @@
 import gc
-
+import scanpy as sc
 import glob
 import math
+import os
 import time
 from collections import Counter
 
@@ -15,9 +16,9 @@ from torch.utils.data import ConcatDataset, DataLoader
 
 from datasets.preprocess import read_mapping_file
 from models.dataset import generate_dataset_list, PadCollate, generate_dataset_from_pk, \
-    generate_dataset_list_with_hvg
-from models.model import ContrastiveLoss , embedding_pca_initializing, \
-     LabelSmoothing, generate_enhance_core_model, \
+    generate_dataset_list_with_hvg, generate_dataset_list_no_celltype, PadCollate_no_celltype
+from models.model import ContrastiveLoss, embedding_pca_initializing, \
+    LabelSmoothing, generate_enhance_core_model, \
     embedding_pca_initializing_from_pk
 from models.train import Trainer, Context
 from models.utils import set_seed, tsne_plot, umap_plot, check_anndata
@@ -71,9 +72,8 @@ class ContrastiveTrainer(Trainer):
     def train_inner(self, train_loader, context: Optional[Context]):
         loss_sum = []
         for i, batch in enumerate(train_loader):
-
             tissue_idx, tissue_val, feature_idx_pad, feature_val_pad, feature_idx_lens, \
-                feature_val_lens, label = batch
+                feature_val_lens = batch
 
             tissue_idx = tissue_idx.unsqueeze(-1)
             tissue_val = tissue_val.unsqueeze(-1).unsqueeze(-1)
@@ -89,9 +89,11 @@ class ContrastiveTrainer(Trainer):
             key_padding_mask = key_padding_mask.unsqueeze(-2)
 
             feature_val_pad_1 = feature_val_pad_1.unsqueeze(-1)
-            prd_1, _, _ = self.model.encode_with_projection_head(torch.ones_like(tissue_idx), tissue_val, feature_idx_pad_1,
-                                                             feature_val_pad_1,
-                                                             key_padding_mask, None)
+            # print(feature_idx_pad_1.shape)
+            prd_1, _, _ = self.model.encode_with_projection_head(torch.ones_like(tissue_idx), tissue_val,
+                                                                 feature_idx_pad_1,
+                                                                 feature_val_pad_1,
+                                                                 key_padding_mask, None)
 
             feature_idx_pad_2 = torch.clone(feature_idx_pad)
             feature_val_pad_2 = torch.clone(feature_val_pad)
@@ -100,9 +102,10 @@ class ContrastiveTrainer(Trainer):
             key_padding_mask[feature_idx_pad_2 == 0] = 1
             key_padding_mask = key_padding_mask.unsqueeze(-2)
             feature_val_pad_2 = feature_val_pad_2.unsqueeze(-1)
-            prd_2, _, _ = self.model.encode_with_projection_head(torch.ones_like(tissue_idx), tissue_val, feature_idx_pad_2,
-                                                      feature_val_pad_2,
-                                                      key_padding_mask, None)
+            prd_2, _, _ = self.model.encode_with_projection_head(torch.ones_like(tissue_idx), tissue_val,
+                                                                 feature_idx_pad_2,
+                                                                 feature_val_pad_2,
+                                                                 key_padding_mask, None)
 
             total_loss = self.loss(prd_1, prd_2)
             self.opt.zero_grad()
@@ -114,17 +117,99 @@ class ContrastiveTrainer(Trainer):
     def test_inner(self, test_loader, context: Optional[Context]):
         context.epoch_loss = 0
 
+    def generate_new_embedding(self, context: Optional[Context]):
+        batch_size = context.batch_size
+        pad_collate = context.pad_collate
+        title_name = context.title_name
+        visual_save_path = context.visual_save_path
+        data_loader = DataLoader(dataset=self.train_dataset, batch_size=batch_size, shuffle=False,
+                                 collate_fn=pad_collate)
+        self.model.eval()
+        n_embedding, n_label = None, None
+        y_prd_list = []
+        for i, batch in enumerate(data_loader):
+            tissue_idx, tissue_val, feature_idx_pad, feature_val_pad, feature_idx_lens, \
+                feature_val_lens = batch
+            key_padding_mask = torch.zeros_like(feature_idx_pad).to(self.device)
+            key_padding_mask[feature_idx_pad == 0] = 1
+            key_padding_mask = key_padding_mask.unsqueeze(-2)
+            tissue_idx = tissue_idx.unsqueeze(-1)
+            tissue_val = tissue_val.unsqueeze(-1).unsqueeze(-1)
+            feature_val_pad = feature_val_pad.unsqueeze(-1)
+            tissue_idx, tissue_val, feature_idx_pad, feature_val_pad = tissue_idx.to(self.device), \
+                tissue_val.to(self.device), feature_idx_pad.to(self.device), feature_val_pad.to(self.device)
+
+            embedding, attn_score = self.model(torch.ones_like(tissue_idx), tissue_val, feature_idx_pad,
+                                               feature_val_pad,
+                                               key_padding_mask)
+
+            if n_embedding is None:
+                n_embedding = embedding.detach().cpu().squeeze(-2).numpy()
+                # n_label = tissue_idx.cpu().numpy()
+            else:
+                n_embedding = np.concatenate((n_embedding, embedding.detach().cpu().squeeze(-2).numpy()), axis=0)
+        context.n_embedding = n_embedding
+
+
+def show_embedding(dataset_filepath, title_name, d_model, head, d_ffw, dropout_rate, mapping_file, enhance_num,
+                   vocab, batch_size, lr=0.001, device_name='cpu', random_seed=None, project_head_layer=None,
+                   save_model_path=None, trained_model_path=None, continue_train=False, visual_save_path='empty',
+                   anndata_postfix=''):
+    set_seed(random_seed)
+    word_idx_dic, _ = read_mapping_file(mapping_file[0], mapping_file[1])
+    train_dataset_list, adata_list \
+        = generate_dataset_list_no_celltype(filepath_list=dataset_filepath, word_idx_dic=word_idx_dic)
+    embedding_data_name = []
+    for filepath in dataset_filepath:
+        filename, _ = os.path.splitext(os.path.basename(filepath))
+        embedding_data_name.append(filename)
+    batch_set = 0
+    # for adata in adata_list:
+    # batch_set = set(adata.obs['batch_id'])
+    batch_set = [0]
+    print(f'word_idx_idc: {word_idx_dic.word2idx_dic}')
+    print(f'batch set num: {len(batch_set)}')
+    print(f'batch set: {batch_set}')
+    model = generate_enhance_core_model(d_model=d_model, h_dim=d_model, head=head, d_ffw=d_ffw,
+                                        dropout_rate=dropout_rate,
+                                        vocab=vocab, device_name=device_name, mlp_layer=project_head_layer,
+                                        enhance_num=enhance_num)
+    if trained_model_path is not None:
+        state_dict = torch.load(trained_model_path)
+        model.load_state_dict(state_dict['model'])
+    color_map = None
+
+    # train_dataset = ConcatDataset(train_dataset_list)
+
+    total_embedding_list = []
+    for i in range(len(train_dataset_list)):
+        trainer = ContrastiveTrainer(model, train_dataset_list[i], [], continue_train=continue_train,
+                                     trained_model_path=None, device_name=device_name, lr=lr)
+
+        ctx = Context(batch_size=batch_size, save_model_path=save_model_path,
+                      pad_collate=PadCollate_no_celltype(), random_seed=None, epoch=None)
+        ctx.visual_save_path = visual_save_path + "_" + embedding_data_name[i]
+        ctx.title_name = title_name
+        ctx.embedding_data_name = embedding_data_name[i]
+        trainer.generate_new_embedding(ctx)
+        total_embedding_list.append(ctx.n_embedding)
+        # total_true_list.append(ctx.true_list)
+        # total_prd_list.append(ctx.prd_list)
+        # total_prop_list.append(ctx.prop)
+        new_adata = sc.AnnData(X=ctx.n_embedding)
+        new_adata.write_h5ad(f'interpretable/embedding/{ctx.embedding_data_name}{anndata_postfix}.h5ad')
+
+
 def train_enhance_contrastive_model(train_filepath, epoch, d_model, h_dim, head, d_ffw, dropout_rate,
                                     mapping_file, vocab, pca_num, batch_size, enhance_num, with_d=True,
                                     lr=0.001, device_name='cpu', random_seed=None, project_head_layer=None,
                                     save_model_path=None, trained_model_path=None, continue_train=False, freeze=False):
     set_seed(random_seed)
-    word_idx_dic, cell_type_idx_dic = read_mapping_file(mapping_file[0], mapping_file[1])
+    word_idx_dic, _ = read_mapping_file(mapping_file[0], mapping_file[1])
     train_dataset_list, adata_list \
-        = generate_dataset_list(filepath_list=train_filepath, word_idx_dic=word_idx_dic,
-                                cell_type_idx_dic=cell_type_idx_dic)
+        = generate_dataset_list_no_celltype(filepath_list=train_filepath, word_idx_dic=word_idx_dic)
     print(f'word_idx_idc: {word_idx_dic.word2idx_dic}')
-    print(f'cell type dic: {cell_type_idx_dic.word2idx_dic}')
+    # print(f'cell type dic: {cell_type_idx_dic.word2idx_dic}')
     model = generate_enhance_core_model(d_model=d_model, h_dim=h_dim, head=head, d_ffw=d_ffw,
                                         dropout_rate=dropout_rate,
                                         vocab=vocab, device_name=device_name, mlp_layer=project_head_layer,
@@ -142,9 +227,10 @@ def train_enhance_contrastive_model(train_filepath, epoch, d_model, h_dim, head,
                                  trained_model_path=trained_model_path, device_name=device_name, lr=lr)
 
     ctx = Context(epoch=epoch, batch_size=batch_size, save_model_path=save_model_path,
-                  pad_collate=PadCollate(), random_seed=None)
+                  pad_collate=PadCollate_no_celltype(), random_seed=None)
     ctx.with_d = with_d
     trainer.train(ctx)
+
 
 def train_enhance_contrastive(dir_name='mouse', dataset_name='Bone_marrow', word_dic_prefix='Bone_marrow',
                               cell_type_prefix='Bone_marrow', enhance_num=1, head_num=1, random_seed=None):
@@ -162,7 +248,7 @@ def train_enhance_contrastive(dir_name='mouse', dataset_name='Bone_marrow', word
                                         f'../../datasets/preprocessed/{dir_name}/{word_dic_prefix}_word_dic.pk',
                                         f'../../datasets/preprocessed/{dir_name}/{cell_type_prefix}_cell_type_dic.pk'],
                                     save_model_path=f'pretrained/{dataset_name}_enhance{enhance_num}_{head_num}head_pretrained_cts_model.pth',
-                                    d_model=64, h_dim=64, head=head_num, d_ffw=64*3, dropout_rate=0.2, vocab=40000,
+                                    d_model=64, h_dim=64, head=head_num, d_ffw=64 * 3, dropout_rate=0.2, vocab=40000,
                                     pca_num=64,
                                     batch_size=100,
                                     device_name='cuda:0', random_seed=random_seed, continue_train=False)

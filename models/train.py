@@ -30,6 +30,7 @@ class Trainer():
                  lr=0.001, weight_decay=1e-2, trained_model_path=None, continue_train=False):
         self.model = model
         self.device = torch.device(device_name)
+        self.model.to(device_name)
         self.train_dataset = train_dataset
         self.test_dataset = test_dataset
         self.lr = lr
@@ -57,23 +58,23 @@ class Trainer():
             train_loader = DataLoader(dataset=self.train_dataset, batch_size=batch_size, shuffle=True, num_workers=0,
                                       pin_memory=True, collate_fn=pad_collate, drop_last=False)
             train_loader_list.append(train_loader)
-            print(f'train datasets size: {len(self.train_dataset)}')
+            # print(f'train datasets size: {len(self.train_dataset)}')
         else:
             for i in range(len(self.train_dataset)):
                 train_loader_list.append(DataLoader(dataset=self.train_dataset[i], batch_size=batch_size, shuffle=True,
                                                     collate_fn=pad_collate, drop_last=False))
-                print(f'train datasets {i + 1} size: {len(self.train_dataset[i])}')
+                # print(f'train datasets {i + 1} size: {len(self.train_dataset[i])}')
 
         if type(self.test_dataset) is not list:
             test_loader = DataLoader(dataset=self.test_dataset, batch_size=batch_size, shuffle=True, num_workers=0,
                                      pin_memory=True, collate_fn=pad_collate, drop_last=False)
             test_loader_list.append(test_loader)
-            print(f'test datasets size: {len(self.test_dataset)}')
+            # print(f'test datasets size: {len(self.test_dataset)}')
         else:
             for i in range(len(self.test_dataset)):
                 test_loader_list.append(DataLoader(dataset=self.test_dataset[i], batch_size=batch_size, shuffle=True,
                                                    collate_fn=pad_collate, drop_last=False))
-                print(f'test datasets {i + 1} size: {len(self.test_dataset[i])}')
+                # print(f'test datasets {i + 1} size: {len(self.test_dataset[i])}')
 
         train_info_list = [[] for _ in range(len(train_loader_list))]
         test_info_list = [[] for _ in range(len(test_loader_list))]

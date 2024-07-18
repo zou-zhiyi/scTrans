@@ -267,102 +267,6 @@ class ClassificationTrainer(Trainer):
         # visual_save_path = context.visual_save_path
         data_loader = DataLoader(dataset=self.train_dataset, batch_size=batch_size, shuffle=False,
                                  collate_fn=pad_collate)
-        self.model.eval()
-        n_embedding = None
-        n_attention_weights, n_label, n_feature_idx = None, None, None
-        for i, batch in enumerate(data_loader):
-
-            tissue_idx, tissue_val, feature_idx_pad, feature_val_pad, feature_idx_lens, \
-                feature_val_lens, label = batch
-            key_padding_mask = torch.zeros_like(feature_idx_pad).to(self.device)
-            key_padding_mask[feature_idx_pad == 0] = 1
-            key_padding_mask = key_padding_mask.unsqueeze(-2)
-            tissue_idx = tissue_idx.unsqueeze(-1)
-            tissue_val = tissue_val.unsqueeze(-1).unsqueeze(-1)
-            feature_val_pad = feature_val_pad.unsqueeze(-1)
-            tissue_idx, tissue_val, feature_idx_pad, feature_val_pad = tissue_idx.to(self.device), \
-                tissue_val.to(self.device), feature_idx_pad.to(self.device), feature_val_pad.to(self.device)
-            label = label.to(self.device).unsqueeze(-1)
-            batch_size = label.shape[0]
-
-            embedding, attention_weights = self.model.encode(torch.ones_like(tissue_idx), tissue_val, feature_idx_pad,
-                                                             feature_val_pad,
-                                                             key_padding_mask)
-            # attention_weights = attention_weights.squeeze(-2)
-            feature_idx_pad = feature_idx_pad.cpu()
-            print(f'feature idx shape: {feature_idx_pad.shape}')
-            attention_weights = attention_weights.squeeze(-2).detach().cpu().numpy()
-            print(attention_weights.sum(-1))
-            print(f'attention weights shape: {attention_weights.shape}')
-            # embedding, _ = self.model.encode(tissue_idx, tissue_val, feature_idx_pad, feature_val_pad,
-            #                                  key_padding_mask)
-            current_gene_num = attention_weights.shape[-1]
-            cell_attention_tmp = np.zeros((batch_size, context.gene_num), dtype=np.float32)
-            print(f'cell attention tmp shape: {cell_attention_tmp.shape}')
-            cell_idx = np.arange(batch_size).reshape(1, -1).repeat(current_gene_num, axis=0)
-            cell_idx = np.transpose(cell_idx)
-            print(f'cell_idx shape: {cell_idx.shape}')
-            print(cell_attention_tmp[cell_idx, feature_idx_pad].shape)
-
-            cell_attention_tmp[cell_idx, feature_idx_pad] = attention_weights
-            print(attention_weights.sum(-1))
-            print(cell_attention_tmp.sum(-1))
-            print(f'cell attention tmp shape: {cell_attention_tmp.shape}')
-
-            # if batch_size == 2:
-            #     print(cell_idx)
-            #     print(cell_attention_tmp)
-
-            if n_embedding is None:
-                n_embedding = embedding.detach().cpu().squeeze(-2).numpy()
-                n_label = label.cpu().numpy()
-                n_attention_weights = cell_attention_tmp
-                # n_label = tissue_idx.cpu().numpy()
-            else:
-                n_embedding = np.concatenate((n_embedding, embedding.detach().cpu().squeeze(-2).numpy()), axis=0)
-                n_label = np.concatenate((n_label, label.cpu().numpy()), axis=0)
-                n_attention_weights = np.concatenate((n_attention_weights, cell_attention_tmp), axis=0)
-                # n_label = np.concatenate((n_label, tissue_idx.cpu().numpy()), axis=0)
-        print(f'n attention weights: {n_attention_weights.shape}')
-        print(n_attention_weights.sum(-1))
-        n_attention_weights_tensor = torch.tensor(n_attention_weights)
-
-        label_sets = set(n_label.flatten())
-        n_label = n_label.flatten()
-        cell_type_gene_dic = {}
-        cell_vec = None
-        word_idx_dic = context.word_idx_dic
-        for l in label_sets:
-
-            cell_vec_tmp = np.zeros(context.gene_num)
-            cell_n_attention_weights_tensor = n_attention_weights_tensor[n_label == l, :].sum(0)
-            # 选择权重topk的关键基因
-            vals, indices = cell_n_attention_weights_tensor.topk(k=context.k, dim=-1, largest=True)
-            vals = vals.numpy()
-            indices = indices.numpy()
-
-            indices = indices[vals != 0]
-            vals = vals[vals != 0]
-            cell_gene_name_list = set(list(map(lambda x: word_idx_dic.getGene(x), indices)))
-            cell_vec_tmp[indices] = vals
-
-            cell_type_gene_dic[l] = cell_gene_name_list
-
-            if cell_vec is None:
-                cell_vec = cell_vec_tmp.reshape(1, -1)
-            else:
-                cell_vec = np.concatenate((cell_vec, cell_vec_tmp.reshape(1, -1)), axis=0)
-
-        print(cell_type_gene_dic)
-        write_file_to_pickle(cell_type_gene_dic, f'interpretable/{context.dataset_name}_top{context.k}_gene_dic.pk')
-
-    # 根据预测结果进行筛选
-    def show_attention_weights_prd(self, context: Optional[Context]):
-        batch_size = context.batch_size
-        pad_collate = context.pad_collate
-        # visual_save_path = context.visual_save_path
-        data_loader = DataLoader(dataset=self.train_dataset, batch_size=batch_size, shuffle=False,
-                                 collate_fn=pad_collate)
         cell_num = len(self.train_dataset)
         # cell_attention = np.zeros_like((cell_num, context.gene_num), dtype=float)
         self.model.eval()
@@ -995,25 +899,25 @@ def train_enhance_extra_task2_with_d(word_dic_prefix, cell_type_prefix, train_fi
         []
     torch.cuda.synchronize()
     start = time.time()
-    # train_enhance_contrastive_model(train_filepath=train_file_path_list,
-    #                                 # [1
-    #                                 #                         '../../datasets/mouse/Testis/mouse_Testis_total.h5ad',
-    #                                 #                   # ['../../datasets/mouse/Bladder/mouse_Bladder_total.h5ad']
-    #                                 #                             '../../datasets/mouse/Brain/mouse_Brain_total.h5ad',
-    #                                 #                             '../../datasets/mouse/Bladder/mouse_Bladder_total.h5ad'],
-    #                                 with_d=False,
-    #                                 epoch=40,
-    #                                 lr=0.0002,
-    #                                 enhance_num=enhance_num,
-    #                                 project_head_layer=None,
-    #                                 mapping_file=[
-    #                                     f'../../datasets/preprocessed/{word_dic_prefix}_word_dic.pk',
-    #                                     f'../../datasets/preprocessed/{cell_type_prefix}_cell_type_dic.pk'],
-    #                                 save_model_path=f'pretrained/{save_model_prefix}_tissue_enhance1_1head_pretrained_cts_model_300_percent_pe_mean_with_tissue_without_D.pth',
-    #                                 d_model=64, h_dim=64, head=1, d_ffw=64 * 3, dropout_rate=0.2, vocab=40000,
-    #                                 pca_num=64,
-    #                                 batch_size=100,
-    #                                 device_name='cuda:0', random_seed=0, continue_train=False)
+    train_enhance_contrastive_model(train_filepath=train_file_path_list,
+                                    # [1
+                                    #                         '../../datasets/mouse/Testis/mouse_Testis_total.h5ad',
+                                    #                   # ['../../datasets/mouse/Bladder/mouse_Bladder_total.h5ad']
+                                    #                             '../../datasets/mouse/Brain/mouse_Brain_total.h5ad',
+                                    #                             '../../datasets/mouse/Bladder/mouse_Bladder_total.h5ad'],
+                                    with_d=False,
+                                    epoch=40,
+                                    lr=0.0002,
+                                    enhance_num=enhance_num,
+                                    project_head_layer=None,
+                                    mapping_file=[
+                                        f'../../datasets/preprocessed/{word_dic_prefix}_word_dic.pk',
+                                        f'../../datasets/preprocessed/{cell_type_prefix}_cell_type_dic.pk'],
+                                    save_model_path=f'pretrained/{save_model_prefix}_tissue_enhance1_1head_pretrained_cts_model_300_percent_pe_mean_with_tissue_without_D.pth',
+                                    d_model=64, h_dim=64, head=1, d_ffw=64 * 3, dropout_rate=0.2, vocab=40000,
+                                    pca_num=64,
+                                    batch_size=100,
+                                    device_name='cuda:0', random_seed=0, continue_train=False)
     torch.cuda.synchronize()
     end = time.time()
     pretrain_run_time_list.append(end - start)
@@ -1029,7 +933,7 @@ def train_enhance_extra_task2_with_d(word_dic_prefix, cell_type_prefix, train_fi
                                                        f'../../datasets/preprocessed/{word_dic_prefix}_word_dic.pk',
                                                        f'../../datasets/preprocessed/{cell_type_prefix}_cell_type_dic.pk'],
                                                    save_model_path=f'pretrained/{save_model_prefix}_{i}_tissue_enhance1_1head_pretrained_class_model_300_percent_pe_mean_with_tissue_without_D.pth',
-                                                   # trained_model_path=f'pretrained/{save_model_prefix}_tissue_enhance1_1head_pretrained_cts_model_300_percent_pe_mean_with_tissue_without_D.pth',
+                                                   trained_model_path=f'pretrained/{save_model_prefix}_tissue_enhance1_1head_pretrained_cts_model_300_percent_pe_mean_with_tissue_without_D.pth',
                                                    d_model=64, h_dim=64, head=1, d_ffw=64 * 3, dropout_rate=0.2,
                                                    vocab=40000,
                                                    pca_num=64,
@@ -1213,27 +1117,6 @@ def show_enhance_attention_weights(dataset_name='Mouse-Pancreas-MCA', check_data
                       f'../../../datasets/preprocessed/{dir_name}/{cell_type_prefix}_cell_type_dic.pk'],
         vocab=40000, batch_size=100)
 
-
-def show_enhance_attention_weights_prd(dataset_name='Mouse-Pancreas-MCA', check_dataset_name='MCA-Pancreas', k=10):
-    word_dic_prefix = check_dataset_name + "_Extra_Task2"
-    cell_type_prefix = check_dataset_name + "_Extra_Task2"
-    dir_name = 'cmp'
-    adata_postfix = '.h5ad'
-    data_files = glob.glob(f'../../../datasets/{dir_name}/{dataset_name}/*{adata_postfix}')
-    print(list(data_files))
-    f = list(data_files)
-    model_dataset_name = check_dataset_name + "_Extra_Task2"
-    show_attention_weights_prd(
-        trained_model_path=f'pretrained/{model_dataset_name}_interpretable__tissue_enhance1_1head_pretrained_class_model_300_percent_pe_mean_with_tissue_without_D.pth',
-        dataset_filepath=f, d_model=64, h_dim=64, head=1, d_ffw=192, dropout_rate=0.2, enhance_num=1,
-        mlp_layer=[],
-        dataset_name=model_dataset_name + "_nozero_prd",
-        k=k,
-        device_name="cuda:0",
-        mapping_file=[f'../../../datasets/preprocessed/{dir_name}/{word_dic_prefix}_word_dic.pk',
-                      f'../../../datasets/preprocessed/{dir_name}/{cell_type_prefix}_cell_type_dic.pk'],
-        vocab=40000, batch_size=100)
-
 def train_extra_task1():
     dir_name = 'mouse'
     test_data = glob.glob('../../datasets/Mouse-Pancreas-*/*.h5ad')
@@ -1304,7 +1187,7 @@ def train_extra_task2():
     #                                      print_prefix=test_data + "_Extra_Task2",
     #                                      test_data_name=test_data)
 
-    total_data = glob.glob('../../datasets/Mouse-Pancreas-*/*.h5ad')
+    total_data = glob.glob('../../datasets/Mouse-Brain-*/*.h5ad')
     for j in range(len(total_data)):
         # if j <= 1:
         #     continue
@@ -1325,7 +1208,7 @@ def train_extra_task2():
                                          enhance_num=1,
                                          save_model_prefix=test_data+"_Extra_Task2" + "_total", times=5,
                                          # save_model_prefix=test_data + "_Extra_Task2" + '_big', times=1,
-                                         print_postfix='_nopretrain_finetune40epoch_1layer_1head_meanval_dot_embedding_nomaskenhance_embeddingdropout',
+                                         print_postfix='_pretrain40epoch_finetune40epoch_1layer_1head_val_dot_embedding_nomaskenhance_embeddingdropout',
                                          print_prefix=test_data + "_Extra_Task2_",
                                          test_data_name=test_data)
 

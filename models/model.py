@@ -13,7 +13,7 @@ from torch.autograd import Function
 
 
 class Encoder(nn.Module):
-    def __init__(self, d_model, h_dim, head, d_ffw, dropout_rate, enhance_num, vocab=300000, embedding_dropout=True):
+    def __init__(self, d_model, h_dim, head, d_ffw, dropout_rate, enhance_num, vocab=300000, embedding_dropout=False):
         super(Encoder, self).__init__()
         self.d_model = d_model
         self.embedding_dropout = embedding_dropout

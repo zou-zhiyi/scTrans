@@ -42,7 +42,6 @@ class SparsePredictDatasetPreprocessedV2(Dataset):
             data_val = data_val[g_idx_mask]
             g_idx_list = g_idx_list[g_idx_mask]
 
-
             # mean scaling
             # print(data_val)
             data_val = data_val / data_val.mean()
@@ -93,8 +92,6 @@ class SparsePredictDatasetPreprocessedV3_from_list(Dataset):
         return self.len
 
 
-
-
 class PadCollate():
     def __init__(self):
         return
@@ -115,12 +112,54 @@ class PadCollate():
             feature_idx_lens), \
             feature_val_lens_tensor, label_tensor
 
+class PadCollate_no_celltype():
+    def __init__(self):
+        return
+
+    def __call__(self, batch):
+        # print('start pad')
+        # print(batch)
+        tissue_idx, tissue_val, feature_idx, feature_val = zip(*batch)
+        feature_idx_lens = [len(x) for x in feature_idx]
+        feature_val_lens = [len(y) for y in feature_val]
+        feature_idx_pad = pad_sequence(feature_idx, batch_first=True, padding_value=0)
+        feature_val_pad = pad_sequence(feature_val, batch_first=True, padding_value=0)
+        feature_val_lens_tensor = torch.tensor(feature_val_lens)
+        del feature_val_lens
+        return torch.tensor(tissue_idx), torch.tensor(tissue_val), feature_idx_pad, feature_val_pad, torch.tensor(
+            feature_idx_lens), \
+            feature_val_lens_tensor
+
+class PadCollate2():
+    def __init__(self):
+        return
+
+    def __call__(self, batch):
+        # print('start pad')
+        # print(batch)
+        tissue_idx, tissue_val, feature_idx, feature_val, label, batch_id, raw_data = zip(*batch)
+        feature_idx_lens = [len(x) for x in feature_idx]
+        feature_val_lens = [len(y) for y in feature_val]
+        feature_idx_pad = pad_sequence(feature_idx, batch_first=True, padding_value=0)
+        feature_val_pad = pad_sequence(feature_val, batch_first=True, padding_value=0)
+        feature_val_lens_tensor = torch.tensor(feature_val_lens)
+        label_tensor = torch.tensor(label)
+        batch_id_tensor = torch.tensor(batch_id)
+        # print(f'batch id:{batch_id}')
+        # print(f'raw data:{raw_data}')
+        raw_data_tensor = torch.tensor(raw_data)
+        del feature_val_lens
+        del label
+        return torch.tensor(tissue_idx), torch.tensor(tissue_val), feature_idx_pad, feature_val_pad, torch.tensor(
+            feature_idx_lens), \
+            feature_val_lens_tensor, label_tensor, batch_id_tensor, raw_data_tensor
 class DenseData():
     def __init__(self, gene_idx_list, gene_val_list, rule_idx_list, rule_gene_idx_list):
         self.gene_idx_list = gene_idx_list
         self.gene_val_list = gene_val_list
         self.rule_idx_list = rule_idx_list
         self.rule_gene_idx_list = rule_gene_idx_list
+
 
 def generate_train_test_dataset(filepath, test_size):
     adata = check_anndata(filepath)
@@ -166,8 +205,8 @@ def generate_train_test_dataset_list_from_pk(pk_filepath, label, test_size, rand
                                                  label_list=label,
                                                  random_seed=random_seed)
     # test_dataset, _ = stratify_split(total_data=test_dataset, test_size=0.5,
-                                     # label_list=label,
-                                     # random_seed=random_seed)
+    # label_list=label,
+    # random_seed=random_seed)
     train_dataset = SparsePredictDatasetPreprocessedV3_from_list(train_dataset)
     test_dataset = SparsePredictDatasetPreprocessedV3_from_list(test_dataset)
     del total_dataset
@@ -188,6 +227,21 @@ def generate_dataset_list(filepath_list, word_idx_dic, cell_type_idx_dic):
         test_dataset_list.append(test_dataset)
         adata_list.append(adata)
     return test_dataset_list, adata_list
+
+def generate_dataset_list_no_celltype(filepath_list, word_idx_dic):
+    test_dataset_list, adata_list = [], []
+    for filepath in filepath_list:
+        adata = check_anndata(filepath)
+        test_dataset = SparsePredictDatasetPreprocessed_no_celltype(adata.X, word_idx_dic,
+                                                          adata.var_names)
+        # test_dataset = SparsePredictDatasetPreprocessedV2(adata.X, adata.obs['cell_type'], word_idx_dic,
+        #                                                   cell_type_idx_dic,
+        #                                                   adata.var_names,
+        #                                                   adata.obs["batch_id"])
+        test_dataset_list.append(test_dataset)
+        adata_list.append(adata)
+    return test_dataset_list, adata_list
+
 
 def generate_dataset_list_with_hvg(filepath_list, word_idx_dic, cell_type_idx_dic, hvg_name_list):
     test_dataset_list, adata_list = [], []
