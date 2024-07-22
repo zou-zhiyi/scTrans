@@ -1,5 +1,5 @@
 # scTrans
-This is a single cell transformer-based cell type annotation method, leveraging non-zero expressed gene via sparse attention.
+This is a single cell transformer-based cell type annotation method.
 
 ## Requirements
 + Python >= 3.7
