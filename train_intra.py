@@ -1,9 +1,8 @@
 import os.path
 
-from datasets.preprocess import generate_mapping_file
 from models.impl.ClassificationTrainer_intra import train_enhance_class_model
 from models.impl.ContrastiveTrainer import train_enhance_contrastive_model
-from models.utils import check_anndata
+from models.utils import check_anndata, generate_mapping_file
 
 
 def preprocess(adata_path, save_dic_path):
