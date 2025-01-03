@@ -3,9 +3,9 @@ import torch.nn as nn
 
 
 class WordEmbedding(nn.Module):
-    def __init__(self, d_model, vocab, dropout_rate):
+    def __init__(self, embedding_dim, vocab, dropout_rate):
         super(WordEmbedding, self).__init__()
-        self.word_embed = nn.Embedding(vocab, d_model, padding_idx=0)
+        self.word_embed = nn.Embedding(vocab, embedding_dim, padding_idx=0)
         # self.dropout = nn.Dropout1d(dropout_rate)
 
     def forward(self, x):
@@ -15,7 +15,7 @@ class WordEmbedding(nn.Module):
 
 
 class PercentValueEncoding(nn.Module):
-    def __init__(self, d_model, dropout):
+    def __init__(self, embedding_dim, dropout):
         # d_model=512,dropout=0.1
         super(PercentValueEncoding, self).__init__()
         self.dropout = nn.Dropout(dropout)
@@ -114,15 +114,19 @@ class LearnableAbsolutePositionEmbedding(nn.Module):
 
 
 class ModelPercentEmbedding(nn.Module):
-    def __init__(self, d_model, dropout_rate, vocab=30000):
+    def __init__(self,embedding_dim, d_model, dropout_rate, vocab=30000):
         super(ModelPercentEmbedding, self).__init__()
-        self.feature_embedding = WordEmbedding(d_model, vocab, dropout_rate)
-        self.value_embedding = PercentValueEncoding(d_model, dropout_rate)
+        self.feature_embedding = WordEmbedding(embedding_dim, vocab, dropout_rate)
+        self.value_embedding = PercentValueEncoding(embedding_dim, dropout_rate)
+        self.is_linear_transform = False
+        if embedding_dim != d_model:
+            self.linear = nn.Linear(embedding_dim, d_model)
+            self.is_linear_transform = True
 
     def forward(self, feature_idx, feature_val=None, embedding_dropout=False):
-        # print(feature_idx)
         x = self.feature_embedding(feature_idx)
-        # print(self.feature_embedding.word_embed.weight.grad)
+        if self.is_linear_transform:
+            x = self.linear(x)
         return self.value_embedding(x, feature_val, embedding_dropout)
 
 class ModelMlpPositionEmbedding(nn.Module):

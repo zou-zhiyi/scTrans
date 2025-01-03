@@ -26,7 +26,7 @@ class Context():
 
 
 class Trainer():
-    def __init__(self, model: nn.Module, train_dataset, test_dataset, device_name='cpu',
+    def __init__(self, model: nn.Module, train_dataset, test_dataset, save_path="", device_name='cpu',
                  lr=0.001, weight_decay=1e-2, trained_model_path=None, continue_train=False):
         self.model = model
         self.device = torch.device(device_name)
@@ -36,6 +36,7 @@ class Trainer():
         self.lr = lr
         self.opt = torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=weight_decay)
         self.drop_last = False
+        self.save_path = save_path
         if trained_model_path is not None:
             state_dict = torch.load(trained_model_path)
             self.model.load_state_dict(state_dict['model'])
@@ -122,7 +123,7 @@ class Trainer():
         for i in range(len(test_info_list)):
             for j in range(len(test_info_list[i])):
                 test_loss_total.append(test_info_list[i][j])
-        loss_visual(loss_total, test_loss_total)
+        loss_visual(loss_total, test_loss_total, save_path=self.save_path)
         loss_total.clear()
         test_loss_total.clear()
         pass

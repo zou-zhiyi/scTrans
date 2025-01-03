@@ -2,9 +2,9 @@ import gc
 import glob
 import os
 
-from datasets.preprocess import generate_mapping_file
 from models.impl.ClassificationTrainer_crossbatch import train_enhance_class_model_with_extra, show_embedding
 from models.impl.ContrastiveTrainer import train_enhance_contrastive_model
+from models.utils import generate_mapping_file
 
 
 def preprocess(reference_adata_file_list, query_data_name, save_path='preprocessed'):

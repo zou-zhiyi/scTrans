@@ -12,14 +12,13 @@ import torch
 from torch import nn
 from torch.utils.data import ConcatDataset, DataLoader
 
-from datasets.preprocess import read_mapping_file
 from models.dataset import generate_train_test_dataset_list, PadCollate, \
     generate_dataset_list, generate_train_test_dataset_list_from_pk
 from models.impl.ContrastiveTrainer import train_enhance_contrastive, train_enhance_contrastive_from_pk
 from models.model import LabelSmoothing, generate_enhance_classification_model_with_d
 from models.train import Trainer, Context, enhance_classification_construct
 
-from models.utils import set_seed, calculate_score, tsne_plot, umap_plot, write_file_to_pickle, check_anndata
+from models.utils import set_seed, calculate_score, write_file_to_pickle, check_anndata, read_mapping_file
 
 import pandas as pd
 
@@ -189,7 +188,6 @@ class ClassificationTrainer(Trainer):
 
         print(n_embedding.shape)
         print(n_label.shape)
-        tsne_plot(n_embedding, n_label, visual_save_path)
 
     def show_attention_weights(self, context: Optional[Context]):
         batch_size = context.batch_size
@@ -361,9 +359,7 @@ def train_enhance_class_model(train_filepath, test_size, epoch, d_model, head, d
         = generate_train_test_dataset_list(filepath_list=train_filepath, test_size=test_size,
                                            word_idx_dic=word_idx_dic, cell_type_idx_dic=cell_type_idx_dic,
                                            random_seed=random_seed)
-    # print(f'word_idx_idc: {word_idx_dic.word2idx_dic}')
-    # predict_type = adata.uns['cell_type_nums']
-    # print(f'cell type dic: {cell_type_idx_dic.word2idx_dic}')
+
     model = generate_enhance_classification_model_with_d(d_model=d_model,h_dim=d_model, head=head, d_ffw=d_ffw,
                                                          dropout_rate=dropout_rate,
                                                          predict_type=len(cell_type_idx_dic.word2idx_dic), vocab=vocab,

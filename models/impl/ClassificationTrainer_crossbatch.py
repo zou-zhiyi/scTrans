@@ -18,15 +18,14 @@ import torch
 from torch import nn
 from torch.utils.data import ConcatDataset, DataLoader
 
-from datasets.preprocess import read_mapping_file
 from models.dataset import generate_train_test_dataset_list, PadCollate, \
     generate_dataset_list, generate_dataset_list_with_hvg
 from models.impl.ContrastiveTrainer import train_enhance_contrastive, train_enhance_contrastive_model
 from models.model import LabelSmoothing, generate_enhance_classification_model_with_d
 from models.train import Trainer, Context, enhance_classification_construct
 
-from models.utils import set_seed, calculate_score, tsne_plot, umap_plot, write_file_to_pickle, scatter_plot, \
-    leiden_clustering, draw_pie_scatter, check_anndata, write_to_h5ad
+from models.utils import set_seed, calculate_score, write_file_to_pickle, \
+    check_anndata, write_to_h5ad, read_mapping_file
 
 from sklearn.metrics import f1_score, accuracy_score, roc_auc_score, normalized_mutual_info_score, adjusted_rand_score, \
     silhouette_score

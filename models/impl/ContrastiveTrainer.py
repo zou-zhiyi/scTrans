@@ -14,14 +14,13 @@ import torch
 from torch import nn
 from torch.utils.data import ConcatDataset, DataLoader
 
-from datasets.preprocess import read_mapping_file
 from models.dataset import generate_dataset_list, PadCollate, generate_dataset_from_pk, \
     generate_dataset_list_with_hvg, generate_dataset_list_no_celltype, PadCollate_no_celltype
 from models.model import ContrastiveLoss, embedding_pca_initializing, \
     LabelSmoothing, generate_enhance_core_model, \
     embedding_pca_initializing_from_pk
 from models.train import Trainer, Context
-from models.utils import set_seed, tsne_plot, umap_plot, check_anndata
+from models.utils import set_seed, check_anndata, read_mapping_file
 
 
 def feature_mask_enhance(feature_idx_pad, mask_rate):
@@ -62,11 +61,11 @@ def feature_val_mean_enhance(feature_val_pad):
 
 class ContrastiveTrainer(Trainer):
 
-    def __init__(self, model: nn.Module, train_dataset, test_dataset, device_name='cpu', lr=0.001,
+    def __init__(self, model: nn.Module, train_dataset, test_dataset,save_path='', device_name='cpu', lr=0.001,
                  weight_decay=1e-2, trained_model_path=None, continue_train=False):
         super().__init__(model, train_dataset, test_dataset, lr=lr, device_name=device_name,
                          weight_decay=weight_decay, trained_model_path=trained_model_path,
-                         continue_train=continue_train)
+                         continue_train=continue_train, save_path=save_path)
         self.loss = ContrastiveLoss(t=0.1)
 
     def train_inner(self, train_loader, context: Optional[Context]):
@@ -120,10 +119,7 @@ class ContrastiveTrainer(Trainer):
     def generate_new_embedding(self, context: Optional[Context]):
         batch_size = context.batch_size
         pad_collate = context.pad_collate
-        title_name = context.title_name
-        visual_save_path = context.visual_save_path
-        data_loader = DataLoader(dataset=self.train_dataset, batch_size=batch_size, shuffle=False,
-                                 collate_fn=pad_collate)
+        data_loader = context.data_loader
         self.model.eval()
         n_embedding, n_label = None, None
         y_prd_list = []
@@ -149,6 +145,61 @@ class ContrastiveTrainer(Trainer):
             else:
                 n_embedding = np.concatenate((n_embedding, embedding.detach().cpu().squeeze(-2).numpy()), axis=0)
         context.n_embedding = n_embedding
+
+    def show_attention_weights(self, context: Optional[Context]):
+        # batch_size = context.batch_size
+        # pad_collate = context.pad_collate
+        # visual_save_path = context.visual_save_path
+        # data_loader = DataLoader(dataset=self.train_dataset, batch_size=batch_size, shuffle=False,
+        #                          collate_fn=pad_collate)
+        # cell_num = len(self.train_dataset)
+        # cell_attention = np.zeros_like((cell_num, context.gene_num), dtype=float)
+        self.model.eval()
+        n_embedding = None
+        n_attention_weights, n_feature_idx = None, None
+        data_loader = context.data_loader
+        for i, batch in enumerate(data_loader):
+
+            tissue_idx, tissue_val, feature_idx_pad, feature_val_pad, feature_idx_lens, \
+                feature_val_lens = batch
+            key_padding_mask = torch.zeros_like(feature_idx_pad).to(self.device)
+            key_padding_mask[feature_idx_pad == 0] = 1
+            key_padding_mask = key_padding_mask.unsqueeze(-2)
+            tissue_idx = tissue_idx.unsqueeze(-1)
+            tissue_val = tissue_val.unsqueeze(-1).unsqueeze(-1)
+            feature_val_pad = feature_val_pad.unsqueeze(-1)
+            tissue_idx, tissue_val, feature_idx_pad, feature_val_pad = tissue_idx.to(self.device), \
+                tissue_val.to(self.device), feature_idx_pad.to(self.device), feature_val_pad.to(self.device)
+            batch_size = tissue_idx.shape[0]
+
+            embedding, attention_weights = self.model(torch.ones_like(tissue_idx), tissue_val, feature_idx_pad,
+                                                             feature_val_pad,
+                                                             key_padding_mask)
+
+            # attention_weights = attention_weights.squeeze(-2)
+            feature_idx_pad = feature_idx_pad.cpu()
+            # print(f'feature idx shape: {feature_idx_pad.shape}')
+            attention_weights = attention_weights.squeeze(-2).detach().cpu().numpy()
+            # print(attention_weights.sum(-1))
+            # print(f'attention weights shape: {attention_weights.shape}')
+            # embedding, _ = self.model.encode(tissue_idx, tissue_val, feature_idx_pad, feature_val_pad,
+            #                                  key_padding_mask)
+            current_gene_num = attention_weights.shape[-1]
+            cell_attention_tmp = np.zeros((batch_size, context.gene_num), dtype=np.float32)
+            # print(f'cell attention tmp shape: {cell_attention_tmp.shape}')
+            cell_idx = np.arange(batch_size).reshape(1, -1).repeat(current_gene_num, axis=0)
+            cell_idx = np.transpose(cell_idx)
+
+            cell_attention_tmp[cell_idx, feature_idx_pad] = attention_weights
+
+
+            if n_embedding is None:
+                n_embedding = embedding.detach().cpu().squeeze(-2).numpy()
+                n_attention_weights = cell_attention_tmp
+            else:
+                n_embedding = np.concatenate((n_embedding, embedding.detach().cpu().squeeze(-2).numpy()), axis=0)
+                n_attention_weights = np.concatenate((n_attention_weights, cell_attention_tmp), axis=0)
+        context.n_attention_weights= n_attention_weights
 
 
 def show_embedding(dataset_filepath, title_name, d_model, head, d_ffw, dropout_rate, mapping_file, enhance_num,
@@ -177,7 +228,6 @@ def show_embedding(dataset_filepath, title_name, d_model, head, d_ffw, dropout_r
     if trained_model_path is not None:
         state_dict = torch.load(trained_model_path)
         model.load_state_dict(state_dict['model'])
-    color_map = None
 
     # train_dataset = ConcatDataset(train_dataset_list)
 

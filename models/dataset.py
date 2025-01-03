@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import torch
+from scipy.sparse import csr_matrix, csc_matrix
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset
 import scanpy as sc
@@ -10,6 +11,49 @@ from models.utils import WordIdxDic, check_anndata, merger_gene_dic, stratify_sp
 
 
 class SparsePredictDatasetPreprocessedV2(Dataset):
+    def binary_generate(self, data, word_idx_dic: WordIdxDic, gene_name_list, left, right):
+        middle = (left + right) // 2
+        if left == right:
+            print(f'current index: {middle}')
+            # print(data[middle][:])
+            # print(data[middle][:].A)
+            # print(data.A.shape)
+            data_val = data[0][:].A[0, :]
+            # print(data_val.shape)
+            data_mask = (data_val != 0)
+            g_name_list = self.gene_name_list[data_mask]
+            g_idx_list = np.array(list(
+                map(lambda x: self.gene_idx_dic.getIdx(x.lower()) if self.gene_idx_dic.getIdx(x.lower()) else -1,
+                    g_name_list)))
+
+            g_idx_mask = (g_idx_list != -1)
+            tissue_idx = None
+            data_val = data_val[data_mask]
+            data_val = data_val[g_idx_mask]
+            g_idx_list = g_idx_list[g_idx_mask]
+
+            # mean scaling
+            # print(data_val)
+            data_val = data_val / data_val.mean()
+            # print(data_val)
+            # print('=====')
+            if tissue_idx is None:
+                # print("tissue is None")
+                # set cls embedding index
+                tissue_idx = 1
+            target_label = self.cell_type_idx_dic.getIdx(str(self.label[middle]).lower())
+            if target_label is None:
+                self.cell_type_idx_dic.insert(str(self.label[middle]).lower())
+            target_label = self.cell_type_idx_dic.getIdx(str(self.label[middle]).lower())
+            self.data_list.append((tissue_idx, g_idx_list, data_val, target_label))
+        else:
+            # print(current_left, current_right, current_middle)
+            # print(left, right, middle)
+            left_data = data[:middle + 1 - left]
+            right_data = data[middle + 1 - left:]
+            self.binary_generate(left_data, word_idx_dic, gene_name_list, left, middle)
+            self.binary_generate(right_data, word_idx_dic, gene_name_list, middle+1, right)
+
     def __init__(self, data, label, word_idx_dic: WordIdxDic, cell_type_idx_dic: WordIdxDic, gene_name_list,
                  tissue=None):
         """
@@ -30,32 +74,35 @@ class SparsePredictDatasetPreprocessedV2(Dataset):
         self.label = label
         self.data_list = []
         self.label_dic = cell_type_idx_dic
-        for index in range(self.len):
-            data_val = (data[index][:] != 0)
-            g_name_list = self.gene_name_list[data_val]
-            g_idx_list = np.array(list(
-                map(lambda x: self.gene_idx_dic.getIdx(x.lower()) if self.gene_idx_dic.getIdx(x.lower()) else -1,
-                    g_name_list)))
+        if type(data) == csr_matrix or type(data) == csc_matrix:
+            self.binary_generate(data, word_idx_dic, gene_name_list, 0, self.len-1)
+        else:
+            for index in range(self.len):
+                data_val = (data[index][:] != 0)
+                g_name_list = self.gene_name_list[data_val]
+                g_idx_list = np.array(list(
+                    map(lambda x: self.gene_idx_dic.getIdx(x.lower()) if self.gene_idx_dic.getIdx(x.lower()) else -1,
+                        g_name_list)))
 
-            g_idx_mask = (g_idx_list != -1)
-            tissue_idx = None
-            data_val = data[index][data_val]
-            data_val = data_val[g_idx_mask]
-            g_idx_list = g_idx_list[g_idx_mask]
+                g_idx_mask = (g_idx_list != -1)
+                tissue_idx = None
+                data_val = data[index][data_val]
+                data_val = data_val[g_idx_mask]
+                g_idx_list = g_idx_list[g_idx_mask]
 
-            # mean scaling
-            # print(data_val)
-            data_val = data_val / data_val.mean()
-            # print(data_val)
-            # print('=====')
-            if tissue_idx is None:
-                # print("tissue is None")
-                tissue_idx = 1
-            target_label = self.cell_type_idx_dic.getIdx(str(self.label[index]).lower())
-            if target_label is None:
-                self.cell_type_idx_dic.insert(str(self.label[index]).lower())
-            target_label = self.cell_type_idx_dic.getIdx(str(self.label[index]).lower())
-            self.data_list.append((tissue_idx, g_idx_list, data_val, target_label))
+                # mean scaling
+                # print(data_val)
+                data_val = data_val / data_val.mean()
+                # print(data_val)
+                # print('=====')
+                if tissue_idx is None:
+                    # print("tissue is None")
+                    tissue_idx = 1
+                target_label = self.cell_type_idx_dic.getIdx(str(self.label[index]).lower())
+                if target_label is None:
+                    self.cell_type_idx_dic.insert(str(self.label[index]).lower())
+                target_label = self.cell_type_idx_dic.getIdx(str(self.label[index]).lower())
+                self.data_list.append((tissue_idx, g_idx_list, data_val, target_label))
 
     def __getitem__(self, index):
         tissue_idx, g_idx_list, data_val, target_label = self.data_list[index]
@@ -68,6 +115,45 @@ class SparsePredictDatasetPreprocessedV2(Dataset):
 
 
 class SparsePredictDatasetPreprocessed_no_celltype(Dataset):
+    def binary_generate(self, data, word_idx_dic: WordIdxDic, gene_name_list, left, right):
+        middle = (left + right) // 2
+        if left == right:
+            print(f'current index: {middle}')
+            # print(data[middle][:])
+            # print(data[middle][:].A)
+            # print(data.A.shape)
+            data_val = data[0][:].A[0, :]
+            # print(data_val.shape)
+            data_mask = (data_val != 0)
+            g_name_list = self.gene_name_list[data_mask]
+            g_idx_list = np.array(list(
+                map(lambda x: self.gene_idx_dic.getIdx(x.lower()) if self.gene_idx_dic.getIdx(x.lower()) else -1,
+                    g_name_list)))
+
+            g_idx_mask = (g_idx_list != -1)
+            tissue_idx = None
+            data_val = data_val[data_mask]
+            data_val = data_val[g_idx_mask]
+            g_idx_list = g_idx_list[g_idx_mask]
+
+            # mean scaling
+            # print(data_val)
+            data_val = data_val / data_val.mean()
+            # print(data_val)
+            # print('=====')
+            if tissue_idx is None:
+                # print("tissue is None")
+                # set cls embedding index
+                tissue_idx = 1
+            self.data_list.append((tissue_idx, g_idx_list, data_val))
+        else:
+            # print(current_left, current_right, current_middle)
+            # print(left, right, middle)
+            left_data = data[:middle + 1 - left]
+            right_data = data[middle + 1 - left:]
+            self.binary_generate(left_data, word_idx_dic, gene_name_list, left, middle)
+            self.binary_generate(right_data, word_idx_dic, gene_name_list, middle+1, right)
+
     def __init__(self, data, word_idx_dic: WordIdxDic, gene_name_list,
                  tissue=None):
         """
@@ -81,32 +167,66 @@ class SparsePredictDatasetPreprocessed_no_celltype(Dataset):
         """
         # self.data = data
         self.gene_idx_dic = word_idx_dic
-        self.gene_name_list = gene_name_list
+        self.gene_name_list = np.array(gene_name_list)
         self.tissue = tissue
         self.len = data.shape[0]
         self.data_list = []
-        for index in range(self.len):
-            data_val = (data[index][:] != 0)
-            g_name_list = self.gene_name_list[data_val]
-            g_idx_list = np.array(list(
-                map(lambda x: self.gene_idx_dic.getIdx(x.lower()) if self.gene_idx_dic.getIdx(x.lower()) else -1,
-                    g_name_list)))
+        if type(data) == csr_matrix or type(data) == csc_matrix:
+            self.binary_generate(data, word_idx_dic, gene_name_list, 0, self.len-1)
+        else:
+            for index in range(self.len):
+                # if index%100==0:
+                #     print(index)
 
-            g_idx_mask = (g_idx_list != -1)
-            tissue_idx = None
-            data_val = data[index][data_val]
-            data_val = data_val[g_idx_mask]
-            g_idx_list = g_idx_list[g_idx_mask]
+                    # data_val = data[index][:].A[0,:]
+                    # data_mask = (data_val!=0)
+                    # g_name_list = self.gene_name_list[data_mask]
+                    #
+                    # g_idx_list = np.array(list(
+                    #     map(lambda x: self.gene_idx_dic.getIdx(x.lower()) if self.gene_idx_dic.getIdx(x.lower()) else -1,
+                    #         g_name_list)))
+                    #
+                    # g_idx_mask = (g_idx_list != -1)
+                    # tissue_idx = None
+                    # data_val = data_val[data_mask]
+                    # data_val = data_val[g_idx_mask]
+                    # g_idx_list = g_idx_list[g_idx_mask]
+                    #
+                    # # mean scaling
+                    # # print(data_val)
+                    # data_val = data_val / data_val.mean()
+                    # # print(data_val)
+                    # # print('=====')
+                    # if tissue_idx is None:
+                    #     # print("tissue is None")
+                    #     # set cls embedding index
+                    #     tissue_idx = 1
+                    # self.data_list.append((tissue_idx, g_idx_list, data_val))
 
-            # mean scaling
-            # print(data_val)
-            data_val = data_val / data_val.mean()
-            # print(data_val)
-            # print('=====')
-            if tissue_idx is None:
-                # print("tissue is None")
-                tissue_idx = 1
-            self.data_list.append((tissue_idx, g_idx_list, data_val))
+                # else:
+                    # if type(data) == np.ndarray:
+                data_val = (data[index][:] != 0)
+                g_name_list = self.gene_name_list[data_val]
+                g_idx_list = np.array(list(
+                    map(lambda x: self.gene_idx_dic.getIdx(x.lower()) if self.gene_idx_dic.getIdx(x.lower()) else -1,
+                        g_name_list)))
+
+                g_idx_mask = (g_idx_list != -1)
+                tissue_idx = None
+                data_val = data[index][data_val]
+                data_val = data_val[g_idx_mask]
+                g_idx_list = g_idx_list[g_idx_mask]
+
+                # mean scaling
+                # print(data_val)
+                data_val = data_val / data_val.mean()
+                # print(data_val)
+                # print('=====')
+                if tissue_idx is None:
+                    # print("tissue is None")
+                    # set cls embedding index
+                    tissue_idx = 1
+                self.data_list.append((tissue_idx, g_idx_list, data_val))
 
     def __getitem__(self, index):
         tissue_idx, g_idx_list, data_val = self.data_list[index]

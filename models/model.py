@@ -13,11 +13,13 @@ from torch.autograd import Function
 
 
 class Encoder(nn.Module):
-    def __init__(self, d_model, h_dim, head, d_ffw, dropout_rate, enhance_num, vocab=300000, embedding_dropout=False):
+    def __init__(self, d_model, h_dim, head, d_ffw, dropout_rate, enhance_num,embedding_dim=None, vocab=300000, embedding_dropout=False):
         super(Encoder, self).__init__()
         self.d_model = d_model
+        if embedding_dim is None:
+            embedding_dim = d_model
         self.embedding_dropout = embedding_dropout
-        self.embedding = ModelPercentEmbedding(d_model=d_model, vocab=vocab, dropout_rate=dropout_rate)
+        self.embedding = ModelPercentEmbedding(embedding_dim=embedding_dim, d_model=d_model, vocab=vocab, dropout_rate=dropout_rate)
         self.encoder = EnhanceEncoder(d_model=d_model, h_dim=h_dim, head=head, d_ffw=d_ffw, dropout_rate=dropout_rate,
                                       is_attention_dropout=True, enhance_num=enhance_num)
         self.projection_head = nn.Sequential(nn.Linear(d_model, 2 * d_model), nn.ReLU(),
