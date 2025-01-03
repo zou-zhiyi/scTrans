@@ -56,6 +56,8 @@ def write_file_to_pickle(data, save_path):
 
 
 def read_file_from_pickle(save_path):
+    if save_path is None:
+        return None
     with open(save_path, 'rb') as file_to_read:
         data = pickle.load(file_to_read)
     return data
@@ -93,28 +95,6 @@ def merger_gene_dic_from_varname(var_names, cell_types, gene_idx_dic=None) -> Wo
     #         gene_idx_dic.insert(tissue.lower())
     return gene_idx_dic
 
-def read_data_from_csv(data_path, cell_type_path, dataset_prefix, check_data=False):
-    rna_data = pd.read_csv(data_path, header=None, low_memory=False)
-    cell_type_data = pd.read_csv(cell_type_path, header=None, low_memory=False)
-    adata = sc.AnnData(np.array(rna_data.iloc[1:, 1:].transpose(), dtype=np.float32))
-    # print(adata.shape)
-    # print(rna_data.iloc[1:, 0])
-    # print(rna_data.iloc[1:, 0].shape)
-    adata.var['gene_name'] = np.array(rna_data.iloc[1:, 0])
-    adata.var_names = np.array(rna_data.iloc[1:, 0])
-    adata.obs_names = np.array(rna_data.iloc[0, 1:])
-    print(dataset_prefix)
-    adata.obs['cell_name'] = np.array(rna_data.iloc[0, 1:] + dataset_prefix)
-    # print(cell_type_data.iloc[:, 2])
-    adata.obs['cell_type'] = np.array(cell_type_data.iloc[1:, 2])
-
-    if check_data:
-        check_anndata_direct(adata)
-    return adata
-    # cell_type_data = pd.read_csv(cell_type_path, header=None, low_memory=False)
-    # check_anndata_direct(adata)
-    # write_to_h5ad(adata, f'Bone_h5/{data_path}')
-
 
 
 def label_transform(adata: sc.AnnData, filepath):
@@ -135,67 +115,12 @@ def label_transform(adata: sc.AnnData, filepath):
     write_to_h5ad(adata, filepath)
 
 
-def merge_files(file_prefixes, save_filename, tissue_name):
-    cell_nums = 0
-    gene_set = set()
-    cell_type_set = set()
-    total_adata = None
-    if len(file_prefixes) == 0:
-        return
-    # print(data_files)
-    for file_prefix in file_prefixes:
-        print(file_prefix)
-        data_files = glob.glob(f'{file_prefix}*_data.csv')
-        cnt = 0
-        for data_file in data_files:
-            father_path = os.path.abspath((os.path.dirname(data_file)))
-            # print(father_path)
-            # print(data_file)
 
-            cell_type_file = data_file.split(os.sep)[-1].split('_')
-            cell_type_file[-1] = 'celltype.csv'
-            cell_type_file = '_'.join(cell_type_file)
-            print(f'{cell_type_file}')
-            adata = read_data_from_csv(data_file, f'{father_path}{os.sep}{cell_type_file}', '_' + cell_type_file, True)
-            cell_nums += len(adata.obs)
-            gene_set.update(set(np.array(adata.var['gene_name'])))
-            cell_type_set.update(set(np.array(adata.obs['cell_type'])))
-            adata.obs['tissues'] = tissue_name
-            adata.obs['batch_id'] = cnt
-            cnt += 1
-            if total_adata is None:
-                total_adata = adata
-            else:
-                total_adata = total_adata.concatenate(adata, join='outer', fill_value=0, uns_merge="first")
-            gc.collect()
-        print(f'cell nums: {cell_nums}')
-        print(f'gene set nums: {len(gene_set)}')
-        print(f'cell type set nums: {len(cell_type_set)}')
-        print(cell_type_set)
-        if total_adata.uns.get('tissues', None) is None:
-            total_adata.uns['tissues'] = [tissue_name]
-        else:
-            total_adata.uns['tissues'].append(tissue_name)
-    sc.pp.highly_variable_genes(total_adata)
-    label_transform(total_adata, save_filename)
-    check_anndata_direct(total_adata)
-    print(total_adata.obs["cell_type_idx"])
-    print(set(total_adata.obs["cell_type_idx"]))
-    return total_adata
-
-def merge_multi_files(fileprefx, save_filename, tissue_name=None):
-    if isinstance(fileprefx, list):
-        return merge_files(fileprefx, save_filename, tissue_name)
-    else:
-        return merge_files([fileprefx], save_filename, tissue_name)
-
-def loss_visual(loss_total, test_loss_total, idx=''):
+def loss_visual(loss_total, test_loss_total,save_path='loss', idx=''):
     plt.cla()
     plt.clf()
     y = loss_total
     print(loss_total)
-    if not os.path.exists('loss'):
-        os.mkdir('loss')
     x = [i for i in range(len(y))]
     plt.plot(x, y)
     x = [i for i in range(len(test_loss_total))]
@@ -203,50 +128,11 @@ def loss_visual(loss_total, test_loss_total, idx=''):
     plt.xlabel("epoch")
     plt.ylabel("loss")
     plt.grid()
-    if not os.path.exists('loss'):
-        os.mkdir('loss')
-    plt.savefig('loss/loss_' + str(idx) + '_' + datetime.datetime.today().strftime("%Y_%m_%d_%H_%M_%S") + '.jpg')
+    if not os.path.exists(f'{save_path}/loss'):
+        os.makedirs(f'{save_path}/loss')
+    plt.savefig(f'{save_path}/loss/loss_' + str(idx) + '_' + datetime.datetime.today().strftime("%Y_%m_%d_%H_%M_%S") + '.jpg')
     # plt.show()
     print('plt saved')
-    plt.close()
-
-
-def randomcolor():
-    colorArr = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F']
-    color = "#" + ''.join([random.choice(colorArr) for i in range(6)])
-    return color
-
-
-def randommarker():
-    marker_list = ['o', 'v', '^', '<', '>', 's', 'p', '*', 'D', 'P', 'X']
-    marker = random.choice(marker_list)
-    return marker
-
-
-def umap_plot(data, label_name, save_file_name):
-    plt.figure(figsize=(10, 10), dpi=300)
-    reducer = umap.UMAP()
-    embedding = reducer.fit_transform(data)
-    # nan_error_value = adata.obs['cell_type_idx'].min()
-    # max_type_value = adata.obs['cell_type_idx'].max()
-    # adata.obs['cell_type_idx'][adata.obs['cell_type_idx'] == nan_error_value] = 0
-    # target = adata.obs['cell_type_idx']
-    # plt.subplots(300)
-    # print(embbeding.shape)
-    label_set = set(label_name.tolist())
-    cnt = 0
-    for l in label_set:
-        tmp = (label_name == l)
-        # print(tmp.shape)
-        # print(tmp.sum())
-        plt.scatter(embedding[tmp, 0], embedding[tmp, 1], marker='o', c=randomcolor(), s=5, label=l)
-        cnt += 1
-    plt.legend(loc="upper right", title="Classes")
-
-    # legend = ax.legend(*scatter.legend_elements(),loc="lower left", title="Classes")
-    # ax.add_artist(legend)
-    plt.savefig(save_file_name)
-    plt.show()
     plt.close()
 
 
@@ -268,6 +154,11 @@ def generate_mapping_file(filepath_list: List[str], word_save_path, cell_type_sa
                 cell_type_idx_dic.insert(str(cell_type).lower())
     write_file_to_pickle(word_idx_dic, word_save_path)
     write_file_to_pickle(cell_type_idx_dic, cell_type_save_path)
+
+def read_mapping_file(word_save_path, cell_type_save_path):
+    word_idx_idc, cell_type_idx_dic = \
+        read_file_from_pickle(word_save_path), read_file_from_pickle(cell_type_save_path)
+    return word_idx_idc, cell_type_idx_dic
 
 
 def check_anndata_direct(data):
