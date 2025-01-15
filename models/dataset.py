@@ -68,7 +68,7 @@ class SparsePredictDatasetPreprocessedV2(Dataset):
         # self.data = data
         self.gene_idx_dic = word_idx_dic
         self.cell_type_idx_dic = cell_type_idx_dic
-        self.gene_name_list = gene_name_list
+        self.gene_name_list = np.array(gene_name_list)
         self.tissue = tissue
         self.len = data.shape[0]
         self.label = label
