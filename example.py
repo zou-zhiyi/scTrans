@@ -72,6 +72,7 @@ def predict(query_adata, cell_type_number, save_path):
     sc_core.predict_cell_type(query_adata=query_adata, batch_size=100)
 
 if __name__ == '__main__':
+    # this datasets had been preprocessed
     adata = check_anndata('datasets/mouse_Muscle.h5ad')
     save_path = 'mouse_Muscle'
     pretrain_adata = adata
