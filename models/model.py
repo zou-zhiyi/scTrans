@@ -19,6 +19,7 @@ class Encoder(nn.Module):
         if embedding_dim is None:
             embedding_dim = d_model
         self.embedding_dropout = embedding_dropout
+        # self.cls_embedding = ModelPercentEmbedding(embedding_dim=embedding_dim, d_model=d_model, vocab=vocab, dropout_rate=dropout_rate)
         self.embedding = ModelPercentEmbedding(embedding_dim=embedding_dim, d_model=d_model, vocab=vocab, dropout_rate=dropout_rate)
         self.encoder = EnhanceEncoder(d_model=d_model, h_dim=h_dim, head=head, d_ffw=d_ffw, dropout_rate=dropout_rate,
                                       is_attention_dropout=True, enhance_num=enhance_num)
@@ -26,6 +27,7 @@ class Encoder(nn.Module):
                                              nn.Linear(2 * d_model, d_model))
 
     def forward(self, query_idx, query_val, key_idx, key_val, mask=None, key_pre_attention=None, proj_nums=None):
+        # query_embedding = self.cls_embedding(query_idx, None, False)
         query_embedding = self.embedding(query_idx, None, False)
         key_embedding = self.embedding(key_idx, key_val, self.embedding_dropout)
         # key_embedding = self.embedding(key_idx, key_val, False)
