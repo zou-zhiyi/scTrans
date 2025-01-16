@@ -13,27 +13,6 @@ import torch
 import pandas as pd
 import os
 
-def embedding_pca_initializing(adata_list, pca_num, gene_idx_idc_path, vocab, sample=None):
-    gene_dic = read_file_from_pickle(gene_idx_idc_path)
-    pca = PCA(n_components=pca_num)
-    new_embedding = np.zeros((vocab, pca_num))
-    for adata in adata_list:
-        if type(adata.X) == csr_matrix or type(adata.X) == csc_matrix:
-            gene_cell_matrix = adata.X.toarray().T
-        else:
-            gene_cell_matrix = np.array(adata.X).T
-        if sample is not None:
-            gene_cell_matrix = gene_cell_matrix[:, :sample]
-            # sample_idx = np.random.permutation(sample)
-        gene_vec = pca.fit_transform(gene_cell_matrix)
-        gene_names = adata.var_names
-        gene_idx = gene_names.map(lambda x: gene_dic.getIdx(x.lower()))
-        gene_idx = np.array(gene_idx).astype(int)
-        print(f'gene idx: {gene_idx}')
-        print(f'gene idx: {gene_idx[gene_idx >= 0]}')
-        new_embedding[gene_idx[gene_idx >= 0]] = gene_vec[gene_idx >= 0]
-    print(f'embedding initializing end')
-    return new_embedding
 
 def pre_train_and_finetune(pre_train_adata, fine_tune_adata, save_path):
 
@@ -52,9 +31,7 @@ def pre_train_and_finetune(pre_train_adata, fine_tune_adata, save_path):
     'enhance_num':1,
     }
     sc_core.create_encoder(config)
-    embedding = embedding_pca_initializing([pre_train_adata], config['embedding_dim'], sc_core.gene_dic_save_path,config['vocab'],
-                                           sample=30000)
-    sc_core.embedding_initialize(embedding)
+    sc_core.embedding_initialize_from_pca([pre_train_adata])
     sc_core.pre_train([pre_train_adata], epoch=40)
 
     cell_type_list = fine_tune_adata.obs['cell_type'].unique().tolist()
@@ -66,11 +43,9 @@ def pre_train_and_finetune(pre_train_adata, fine_tune_adata, save_path):
         'dropout_rate':0.2
     }
     sc_core.create_classification_model(config)
-    sc_core.fine_tune([fine_tune_adata], freeze=True, epoch=40)
+    sc_core.fine_tune([fine_tune_adata], gene_freeze=True, epoch=40)
 
-def predict(query_adata, fine_tune_adata, save_path):
-    cell_type_list = fine_tune_adata.obs['cell_type'].unique().tolist()
-    cell_type_number = len(cell_type_list)
+def predict(query_adata, cell_type_number, save_path):
 
     sc_core = scTrans_core(file_save_path=save_path, device_name='cuda')
     config = {
@@ -95,5 +70,23 @@ def predict(query_adata, fine_tune_adata, save_path):
     sc_core.load_pretrained_model(saved_model_path=f'{save_path}/finetuned_model.pth', type='finetuned')
 
     sc_core.predict_cell_type(query_adata=query_adata, batch_size=100)
-    predict_results_df = pd.DataFrame({'cell_type': query_adata.obs['cell_type'].tolist(), 'cell_type_predict': query_adata.obs['cell_type_predict'].tolist()})
-    predict_results_df.to_csv(f'{save_path}/results.csv', index=True)
+
+if __name__ == '__main__':
+    adata = check_anndata('datasets/mouse_Muscle.h5ad')
+    save_path = 'mouse_Muscle'
+    pretrain_adata = adata
+    index_list = [i for i in range(pretrain_adata.shape[0])]
+    cell_type_list = adata.obs['cell_type'].tolist()
+    train_index, test_index = train_test_split(index_list, test_size=0.9, train_size=0.1, stratify=cell_type_list)
+    fine_tune_adata = adata[train_index, :].copy()
+    query_adata = adata[test_index, :].copy()
+    pre_train_and_finetune(pretrain_adata, fine_tune_adata, save_path)
+
+    cell_type_list = fine_tune_adata.obs['cell_type'].unique().tolist()
+    cell_type_number = len(cell_type_list)
+
+    predict(query_adata=query_adata, cell_type_number=cell_type_number, save_path=save_path)
+    cell_type_predict_list = query_adata.obs['cell_type_predict'].str.lower().tolist()
+    cell_type_true_list = query_adata.obs['cell_type'].str.lower().tolist()
+    acc, ari, f1_scores_median, f1_scores_macro, f1_scores_micro, f1_scores_weighted = calculate_score(cell_type_true_list, cell_type_predict_list)
+    print(f'accuracy: {acc:.4f}, f1_macro: {f1_scores_macro:.4f}')
